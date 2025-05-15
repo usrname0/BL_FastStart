@@ -11,11 +11,11 @@ Credit to https://github.com/danielgtaylor/qtfaststart for the part of this exte
  This is currently working in Windows 11 and should theoretically work everywhere but that is untested.  I will be cleaning some things up shortly.
 
  # Demo
- Here's where to find the checkbox:
+ The checkbox shows up when you choose MPEG-4 (MP4) or QuickTime (MOV) output:
  
  ![Find it](./examples/faststart_findit.png)
  
- Here's what the output looks like:
+ Here's what the output looks like (testing different autonames):
  
  ![Filenames](./examples/faststart_filenames.png)
  
