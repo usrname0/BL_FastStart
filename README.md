@@ -1,7 +1,7 @@
 # blender_faststart
-This is an extension for Blender 4.4+.  
-It inserts a checkbox to the output panel that adds a 'Fast Start' copy to MP4/MOV renders.
-It will create an extra MP4/MOV file with the suffix '-faststart' (your normal render is untouched).
+This is an extension for Blender 4.4+. 
+
+Blender_faststart puts a checkbox on your output panel to add a 'Fast Start' copy to MP4/MOV renders. It will create an extra MP4/MOV file with the suffix '-faststart' (your normal render is untouched).
 
 Credit to https://github.com/danielgtaylor/qtfaststart for the part of this extension that actually does all the work.
 
