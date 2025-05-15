@@ -1,0 +1,29 @@
+# blender_manifest.toml
+# Manifest file for the Blender Fast Start Extension
+
+schema_version = "1.0.0"
+# The 'id' MUST be a valid Python module name (letters, numbers, underscores).
+# It must also match the name of the directory containing this manifest and your extension's __init__.py.
+id = "blender_faststart" 
+version = "1.7.0" 
+name = "Blender Fast Start Extension (qtfaststart)"
+author = "AllergicToTeeth (with AI help)"
+maintainer = "AllergicToTeeth (with AI help)"
+tagline = "A Blender extension: moov atom at the front of MP4/MOV files (Fast Start)"
+type = "add-on"
+license = ["GPL-3.0-or-later"]
+description = """A Blender extension to insert a checkbox to add a 'Fast Start' copy to MP4/MOV renders.
+Finds rendered video by handling various output path patterns.
+Creates new file with the suffix '-faststart' (your normal render is untouched)."""
+website = "https://github.com/usrname0/blender-ffmpeg_fast_start" # Consider updating if your repo name changed
+tags = ["Output", "Video", "Render", "Fast Start", "MP4", "MOV"]
+blender_version_min = "4.4.0"
+
+# The 'modules' key can often be omitted if the extension's root directory 
+# (named by 'id', e.g., 'blender_faststart/') contains an __init__.py 
+# that Blender uses as the entry point for registration.
+# If your __init__.py in the 'blender_faststart/' folder correctly imports 
+# register/unregister from extension_logic.py, this should be fine.
+# modules = ["."] 
+
+# No changes needed for wheels, as you're vendoring pure Python libs.
