@@ -9,7 +9,7 @@ Blender Fast Start puts a checkbox on your output panel to add a 'Fast Start' co
 
 Fast start will make your video load a fraction of a second faster which can actually be handy if you're trying to make a loop with audio or trying to min/max your YouTube video performance or whatnot.
 
-Credit to https://github.com/danielgtaylor/qtfaststart for the part of this extension that actually does all the work.
+Credit to https://github.com/danielgtaylor/qtfaststart and https://github.com/FFmpeg/FFmpeg for the part of this extension that actually does all the work.
 
  # Status
  This is currently working in Windows 11 and Linux Mint (Ubuntu Debian), it's all Python and should theoretically work everywhere but I can't test everything.  I will be cleaning some things up shortly.
