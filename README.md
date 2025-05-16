@@ -39,6 +39,6 @@ Credit to https://github.com/danielgtaylor/qtfaststart for the part of this exte
 
 # Bonus Feature
 
-If you want to customize your suffix you can do so in preferences/addons.  Be sure to hit enter or click in the window somewhere because if you just x out of preferences Blender won't remember it.  Characters that might break things are converted to "_".
+If you want to customize your suffix you can do so in preferences/addons.  Be sure to hit "enter" or click in the window somewhere because if you just "x" out of preferences Blender won't remember what you typed.  Characters that might break things are converted to "_".
  
  ![Custom Suffix](./examples/faststart_preferences.png)
