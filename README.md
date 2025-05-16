@@ -1,4 +1,4 @@
-# blender_faststart
+# Blender Fast Start (MP4/MOV)
 I'm going to make this public but don't use it yet unless you're willing to play guinea pig. 
 
 This is an extension for Blender 4.4+. 
