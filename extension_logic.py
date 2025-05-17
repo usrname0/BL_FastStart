@@ -1,6 +1,63 @@
 # filename: extension_logic.py
 # Main logic for the Fast Start Blender Extension, using bundled qtfaststart.
 
+# --- Blender File Naming Conventions (as of Blender 4.x) ---
+# This script attempts to replicate Blender's output file naming logic.
+# Key behaviors observed and implemented:
+#
+# --- WHEN "File Extension" checkbox is CHECKED (scene.render.use_file_extension is True): ---
+# 1. Extension Lowercasing:
+#    - Blender always converts the final *correct* container extension to lowercase (e.g., .MP4 -> .mp4).
+#
+# 2. Correct Extension Provided by User:
+#    - If user_filepath is "NAME.EXT" (e.g., "TEST.MP4") and .EXT matches the chosen container:
+#        - Output is "NAME.ext" (e.g., "TEST.mp4").
+#        - No frame numbers are added, regardless of animation or single frame.
+#    - If user_filepath is "NAME###.EXT" (e.g., "TEST###.MP4") and .EXT matches chosen container:
+#        - Output is "NAME###.ext" (e.g., "TEST###.mp4").
+#        - The "###" is treated as a literal part of the filename, NOT replaced by frame numbers.
+#
+# 3. No Extension Provided by User:
+#    - If user_filepath is "NAME" (e.g., "TEST"):
+#        - Output is "NAME<frames>.<actual_ext>" (e.g., "TEST0001-0005.mp4").
+#        - Frame numbers (default 4-digit padding, range format like "0001-0005") are always added.
+#    - If user_filepath is "NAME###" or "###NAME###" (e.g., "TEST###" or "###TEST###"):
+#        - The RIGHTMOST "###" sequence is replaced by frame numbers (range format).
+#        - Output is, e.g., "TEST001-005.mp4" or "###TEST001-005.mp4".
+#
+# 4. Incorrect Extension Provided by User:
+#    - If user_filepath is "NAME.WRONG_EXT" (e.g., "TEST.MP4" but MOV container is chosen):
+#        - The entire "NAME.WRONG_EXT" is treated as a base prefix.
+#        - Frame numbers (default 4-digit padding, range format) are appended.
+#        - The correct container extension (lowercase) is then added.
+#        - Output: "NAME.WRONG_EXT<frames>.<actual_ext>" (e.g., "TEST.MP40001-0005.mov").
+#    - If user_filepath is "NAME###.WRONG_EXT" (e.g., "TEST###.TXT" but MP4 container):
+#        - The RIGHTMOST "###" in "NAME###" is replaced by frame numbers.
+#        - The ".WRONG_EXT" is kept literally.
+#        - Output: "NAME<frames>.WRONG_EXT.<actual_ext>" (e.g., "TEST001-005.TXT.mp4").
+#
+# --- WHEN "File Extension" checkbox is UNCHECKED (scene.render.use_file_extension is False): ---
+# 5. No Automatic Extension Handling:
+#    - Blender does NOT automatically add or correct file extensions.
+#    - The user's typed extension (e.g., ".MP4", ".mOV", or no extension) is used AS IS (case-sensitive).
+#
+# 6. Frame Numbering (with "File Extension" unchecked):
+#    - If user_filepath is empty or just `//` (and blend is unsaved), Blender typically errors.
+#      (This addon also errors in `render_init` for an empty user path string).
+#    - If user_filepath is "NAME" (e.g., "test", no hashes, no user extension):
+#        - Output is "NAME" (e.g., "test"). No frame numbers are added.
+#    - If user_filepath contains hashes (e.g., "#", "#.EXT", "NAME###.EXT", "###NAME###.EXT"):
+#        - The RIGHTMOST "###" sequence in the part of the string *before* any user-typed extension is replaced by frame numbers (range format).
+#        - The user-typed extension (if any) is appended literally (case-sensitive).
+#        - Examples (13 frame animation):
+#          - Input: "#"         -> Output: "1-13" (padding from single '#')
+#          - Input: "#.MP4"     -> Output: "1-13.MP4"
+#          - Input: "test###TEST###.mOV" -> Output: "test###TEST001-013.mOV"
+#
+# General Note: Frame number format when added is typically "start-end" (e.g., "0001-0010").
+# For single frames where numbers are added, it's "0001-0001".
+# ---
+
 import bpy
 import os
 import re # For regular expression-based placeholder stripping
@@ -18,7 +75,7 @@ _active_handlers_info = []
 
 # --- Add-on Preferences ---
 class FastStartAddonPreferences(AddonPreferences):
-    bl_idname = __package__ 
+    bl_idname = __package__ # Relies on the __package__ variable when run as an addon
 
     faststart_suffix_prop: StringProperty(
         name="Fast Start Suffix",
@@ -83,7 +140,7 @@ def _construct_video_filename(base_name_part, suffix_after_frame_numbers, start_
         end_frame (int): The ending frame number.
         frame_padding_digits (int): Number of digits for frame number padding (e.g., 4 for "0001").
                                    If 0, no frame number component is added.
-        output_extension_with_dot (str): The correct, lowercase file extension, including the dot (e.g., ".mp4").
+        output_extension_with_dot (str): The file extension, including the dot (e.g., ".mp4", ".MP4", or "").
     """
     frame_str_component = ""
 
@@ -206,6 +263,8 @@ def on_render_init_faststart(scene, depsgraph=None):
 
     original_filepath_setting = scene.render.filepath
     # Check if output path is specified, cancel render if not
+    # This check is crucial. If 'use_file_extension' is False and user provides an empty path,
+    # Blender itself would error. This addon stops it earlier.
     if not original_filepath_setting.strip():
         _render_job_cancelled_by_addon = True
         error_message = ("Fast Start: Output path setting is empty. "
@@ -251,12 +310,18 @@ def post_render_faststart_handler(scene, depsgraph=None):
     print(f"Fast Start (post_render): Handler invoked. Proceeding with Fast Start logic.")
 
     # Get add-on preferences (for the suffix)
-    addon_package_name = __package__ or "blender_faststart" 
+    addon_package_name = __package__ or "blender_faststart" # Default if __package__ is None
+    
     addon_prefs = None
     try:
-        addon_prefs = bpy.context.preferences.addons[addon_package_name].preferences
+        if FastStartAddonPreferences.bl_idname: 
+            addon_prefs = bpy.context.preferences.addons[FastStartAddonPreferences.bl_idname].preferences
+        else: 
+            print(f"Fast Start (post_render) WARNING: FastStartAddonPreferences.bl_idname is not set. Attempting fallback with '{addon_package_name}'.")
+            addon_prefs = bpy.context.preferences.addons[addon_package_name].preferences
     except KeyError:
-        print(f"Fast Start (post_render) ERROR: Could not retrieve add-on preferences for '{addon_package_name}'.")
+        print(f"Fast Start (post_render) ERROR: Could not retrieve add-on preferences using '{FastStartAddonPreferences.bl_idname or addon_package_name}'. Check registration and bl_idname.")
+
 
     default_suffix_value = "-faststart"
     custom_suffix = default_suffix_value 
@@ -266,17 +331,17 @@ def post_render_faststart_handler(scene, depsgraph=None):
         user_suffix_stripped = user_suffix_from_prefs.strip() if user_suffix_from_prefs is not None else ""
         if user_suffix_stripped: 
             custom_suffix = user_suffix_stripped
-        elif user_suffix_from_prefs is not None: # User explicitly set it to blank
+        elif user_suffix_from_prefs is not None: 
             print(f"Fast Start (post_render): User-defined suffix is blank. Using default: '{default_suffix_value}'")
     else:
         print(f"Fast Start (post_render): Suffix property or addon_prefs missing. Using default suffix: '{default_suffix_value}'")
 
     # --- Sanitize the suffix ---
     suffix_before_final_sanitize = custom_suffix
-    custom_suffix = custom_suffix.replace("..", "") # Prevent path traversal
-    reserved_chars_pattern = r'[<>:"/\\|?*]' # Filesystem reserved characters
+    custom_suffix = custom_suffix.replace("..", "") 
+    reserved_chars_pattern = r'[<>:"/\\|?*]' 
     custom_suffix = re.sub(reserved_chars_pattern, '_', custom_suffix)
-    custom_suffix = re.sub(r'[\x00-\x1F]', '', custom_suffix) # ASCII control characters
+    custom_suffix = re.sub(r'[\x00-\x1F]', '', custom_suffix) 
     if not custom_suffix.strip(): 
         if suffix_before_final_sanitize and suffix_before_final_sanitize.strip() and suffix_before_final_sanitize != default_suffix_value:
             print(f"Fast Start (post_render): Suffix '{suffix_before_final_sanitize}' became blank after sanitization. Reverting to default: '{default_suffix_value}'")
@@ -290,8 +355,7 @@ def post_render_faststart_handler(scene, depsgraph=None):
     abs_filepath_setting = bpy.path.abspath(original_filepath_setting_raw) 
 
     container_type = scene.render.ffmpeg.format 
-    actual_container_ext = (".mp4" if container_type == 'MPEG4' else ".mov") 
-
+    
     start_frame = scene.frame_start
     end_frame = scene.frame_end
 
@@ -313,76 +377,86 @@ def post_render_faststart_handler(scene, depsgraph=None):
     print(f"Fast Start (post_render): Absolute filepath setting: '{abs_filepath_setting}'")
     print(f"Fast Start (post_render): Blender output directory: '{blender_output_dir}'")
     print(f"Fast Start (post_render): Effective user setting basename: '{user_setting_basename}' (derived from path or .blend name)")
-    print(f"Fast Start (post_render): Actual container extension: '{actual_container_ext}'")
 
-    user_name_part, user_ext_part = os.path.splitext(user_setting_basename)
-    user_ext_part_lower = user_ext_part.lower()
+    user_name_part, user_ext_part = os.path.splitext(user_setting_basename) # user_ext_part includes '.', e.g. ".MP4" or ""
 
     base_for_construction = ""
     suffix_after_frames = "" 
     frame_padding = 0 
+    final_output_extension = "" # This will be determined based on use_file_extension
 
-    was_user_ext_provided = bool(user_ext_part_lower)
-    is_user_ext_correct = (user_ext_part_lower == actual_container_ext)
+    use_blender_file_extensions_setting = scene.render.use_file_extension
+    print(f"Fast Start (post_render): Blender 'File Extension' checkbox is {'ON' if use_blender_file_extensions_setting else 'OFF'}.")
 
-    if was_user_ext_provided and is_user_ext_correct:
-        # Scenario A: User provided a CORRECT extension (e.g., "TEST.MP4" or "TEST###.MP4" for MP4 container)
-        # Blender uses the user_name_part AS IS (e.g., "TEST" or "TEST###").
-        # It does NOT process hashes into frame numbers in this specific case if a correct extension is given.
-        # The extension is just lowercased.
-        print(f"Fast Start (post_render): Scenario A - Correct extension provided ('{user_ext_part}'). Filename part used literally.")
-        base_for_construction = user_name_part # This will be "TEST" or "TEST###"
-        frame_padding = 0 # Crucial: No frame number processing by our helper for this specific case
-        suffix_after_frames = ""
-        print(f"Fast Start (post_render): Base for construction: '{base_for_construction}', Frame padding: {frame_padding} (no frame processing).")
-    
-    elif not was_user_ext_provided:
-        # Scenario B: User provided NO extension (e.g., "TEST" or "###TEST###" for MP4 container)
-        # Blender processes the RIGHTMOST hashes if present, or adds frame numbers if no hashes.
-        print(f"Fast Start (post_render): Scenario B - No extension provided by user.")
-        effective_stem_for_hashes = user_setting_basename # e.g., "TEST" or "###TEST###"
+    if use_blender_file_extensions_setting:
+        # --- LOGIC WHEN "File Extension" IS CHECKED (True) ---
+        final_output_extension = (".mp4" if container_type == 'MPEG4' else ".mov") # Correct, lowercased
+        print(f"Fast Start (post_render): Actual container extension (lowercase): '{final_output_extension}'")
         
-        # Find the rightmost sequence of hashes
-        last_hash_match = None
-        for match in re.finditer(r'(#+)', effective_stem_for_hashes):
-            last_hash_match = match
-        
-        if last_hash_match:
-            print(f"Fast Start (post_render): Rightmost hashes found in '{effective_stem_for_hashes}' at span {last_hash_match.span()}.")
-            base_for_construction = effective_stem_for_hashes[:last_hash_match.start()]
-            frame_padding = len(last_hash_match.group(1))
-            suffix_after_frames = effective_stem_for_hashes[last_hash_match.end():]
-        else: # No hashes found
-            print(f"Fast Start (post_render): No hashes in '{effective_stem_for_hashes}'. Blender adds frame numbers (range format).")
-            base_for_construction = effective_stem_for_hashes 
-            frame_padding = 4 # Default padding, will result in range format e.g. 0001-0001
+        user_ext_part_lower = user_ext_part.lower()
+        was_user_ext_provided = bool(user_ext_part_lower)
+        is_user_ext_correct = (user_ext_part_lower == final_output_extension)
+
+        if was_user_ext_provided and is_user_ext_correct:
+            # Scenario A
+            print(f"Fast Start (post_render): Scenario A (use_ext=True) - Correct extension provided ('{user_ext_part}'). Filename part used literally.")
+            base_for_construction = user_name_part 
+            frame_padding = 0 
             suffix_after_frames = ""
+        elif not was_user_ext_provided:
+            # Scenario B
+            print(f"Fast Start (post_render): Scenario B (use_ext=True) - No extension provided by user.")
+            effective_stem_for_hashes = user_setting_basename
+            last_hash_match = None
+            for match in re.finditer(r'(#+)', effective_stem_for_hashes): last_hash_match = match
+            if last_hash_match:
+                base_for_construction = effective_stem_for_hashes[:last_hash_match.start()]
+                frame_padding = len(last_hash_match.group(1))
+                suffix_after_frames = effective_stem_for_hashes[last_hash_match.end():]
+            else:
+                base_for_construction = effective_stem_for_hashes 
+                frame_padding = 4 
+                suffix_after_frames = ""
+        else: # was_user_ext_provided and not is_user_ext_correct
+            # Scenario C
+            print(f"Fast Start (post_render): Scenario C (use_ext=True) - Incorrect extension provided ('{user_ext_part}').")
+            stem_candidate_for_hashes = user_name_part
+            last_hash_match = None
+            for match in re.finditer(r'(#+)', stem_candidate_for_hashes): last_hash_match = match
+            if last_hash_match:
+                base_for_construction = stem_candidate_for_hashes[:last_hash_match.start()]
+                frame_padding = len(last_hash_match.group(1))
+                suffix_after_frames = stem_candidate_for_hashes[last_hash_match.end():] + user_ext_part
+            else:
+                base_for_construction = user_setting_basename
+                frame_padding = 4
+                suffix_after_frames = ""
+    else:
+        # --- LOGIC WHEN "File Extension" IS UNCHECKED (False) ---
+        final_output_extension = user_ext_part # Use user's typed extension AS IS (e.g., ".MP4", ".mOV", or "")
+        print(f"Fast Start (post_render): Using user-typed extension literally (or none): '{final_output_extension}'")
 
-    else: # was_user_ext_provided and not is_user_ext_correct
-        # Scenario C: User provided an INCORRECT extension (e.g., "TEST.MP4" for MOV, or "###TEST###.txt" for MP4)
-        # Blender processes the RIGHTMOST hashes in the name part if present, or adds frame numbers if no hashes,
-        # and treats the incorrect user extension as part of the suffix before the correct one.
-        print(f"Fast Start (post_render): Scenario C - Incorrect extension provided ('{user_ext_part}').")
-        stem_candidate_for_hashes = user_name_part # e.g., "TEST" from "TEST.MP4", or "###TEST###" from "###TEST###.txt"
+        # Stem for hash processing is the user's input name part (before their typed extension)
+        # If user typed "test.MP4", user_name_part is "test". If "test", user_name_part is "test".
+        stem_for_hash_processing = user_name_part if user_ext_part else user_setting_basename
+        print(f"Fast Start (post_render): Stem for hash processing (use_ext=False): '{stem_for_hash_processing}'")
 
-        # Find the rightmost sequence of hashes in the name part
         last_hash_match = None
-        for match in re.finditer(r'(#+)', stem_candidate_for_hashes):
+        for match in re.finditer(r'(#+)', stem_for_hash_processing):
             last_hash_match = match
-
+        
         if last_hash_match:
-            # Hashes in name part, incorrect extension (e.g. "###TEST###.txt" for MP4 -> "###TEST001-010.txt.mp4")
-            print(f"Fast Start (post_render): Rightmost hashes found in name part '{stem_candidate_for_hashes}' at span {last_hash_match.span()} despite incorrect extension.")
-            base_for_construction = stem_candidate_for_hashes[:last_hash_match.start()] # "###TEST"
-            frame_padding = len(last_hash_match.group(1)) # 3 (from the rightmost ###)
-            # Suffix includes part after rightmost hashes AND the incorrect user extension
-            suffix_after_frames = stem_candidate_for_hashes[last_hash_match.end():] + user_ext_part # e.g., "" + ".txt"
-        else: # No hashes in name part
-            # No hashes in name part, incorrect extension (e.g. "TEST.MP4" for MOV -> "TEST.MP40001-0001.mov")
-            print(f"Fast Start (post_render): No hashes in name part '{stem_candidate_for_hashes}'. Entire user basename used as prefix before frames.")
-            base_for_construction = user_setting_basename # Entire "TEST.MP4"
-            frame_padding = 4 # Default padding, will result in range format
-            suffix_after_frames = "" # The incorrect extension is already in base_for_construction
+            print(f"Fast Start (post_render): Rightmost hashes found in '{stem_for_hash_processing}' at span {last_hash_match.span()}.")
+            base_for_construction = stem_for_hash_processing[:last_hash_match.start()]
+            frame_padding = len(last_hash_match.group(1))
+            suffix_after_frames = stem_for_hash_processing[last_hash_match.end():]
+        else: # No hashes found in stem_for_hash_processing
+            print(f"Fast Start (post_render): No hashes in '{stem_for_hash_processing}'. Outputting stem literally.")
+            base_for_construction = stem_for_hash_processing 
+            frame_padding = 0 # No frame numbers added if no hashes and use_ext=False
+            suffix_after_frames = ""
+    
+    print(f"Fast Start (post_render): Final construction params: Base='{base_for_construction}', SuffixAfterFrames='{suffix_after_frames}', Padding={frame_padding}, FinalExt='{final_output_extension}'")
 
     # Construct the filename Blender is expected to create
     predicted_blender_filename = _construct_video_filename(
@@ -391,7 +465,7 @@ def post_render_faststart_handler(scene, depsgraph=None):
         start_frame,
         end_frame,
         frame_padding,
-        actual_container_ext
+        final_output_extension # This is now correctly set based on use_file_extension
     )
     
     potential_final_path = os.path.join(blender_output_dir, predicted_blender_filename)
@@ -404,12 +478,39 @@ def post_render_faststart_handler(scene, depsgraph=None):
         print(f"Fast Start (post_render) WARNING: Primary prediction for rendered file failed. Path: '{potential_final_path}' did not exist or was a directory.")
 
     if not original_rendered_file:
-        print(f"Fast Start (post_render) ERROR: Could not find the actual rendered file. "
-              f"Blender output setting: '{original_filepath_setting_raw}'. "
-              f"Predicted based on logic: '{potential_final_path}'. "
-              f"Please check Blender's console for the actual output filename if rendering completed. "
-              f"Skipping Fast Start processing.")
-        return
+        # Attempt a simpler fallback if the complex logic failed, especially for directory outputs
+        # This is a safeguard, the main logic should ideally cover these.
+        if os.path.isdir(abs_filepath_setting): # If user specified a directory
+            # Try default Blender naming for files in a directory if primary logic failed
+            # This is more relevant if use_blender_file_extensions_setting is True
+            if use_blender_file_extensions_setting:
+                blend_name_base = ""
+                if bpy.data.is_saved and bpy.data.filepath:
+                    blend_name_base = Path(bpy.data.filepath).stem
+                
+                # Try with blend file name (if saved)
+                if blend_name_base:
+                    alt_filename_blend = _construct_video_filename(blend_name_base, "", start_frame, end_frame, 4, final_output_extension)
+                    alt_path_blend = os.path.join(blender_output_dir, alt_filename_blend)
+                    if os.path.exists(alt_path_blend) and not os.path.isdir(alt_path_blend):
+                        original_rendered_file = alt_path_blend
+                        print(f"Fast Start (post_render): Found with fallback (blend name in dir): {original_rendered_file}")
+
+                # Try with just frame numbers (common for unsaved or if blend name doesn't match)
+                if not original_rendered_file:
+                    alt_filename_frames = _construct_video_filename("", "", start_frame, end_frame, 4, final_output_extension)
+                    alt_path_frames = os.path.join(blender_output_dir, alt_filename_frames)
+                    if os.path.exists(alt_path_frames) and not os.path.isdir(alt_path_frames):
+                        original_rendered_file = alt_path_frames
+                        print(f"Fast Start (post_render): Found with fallback (frames in dir): {original_rendered_file}")
+        
+        if not original_rendered_file:
+            print(f"Fast Start (post_render) ERROR: Could not find the actual rendered file after fallbacks. "
+                  f"Blender output setting: '{original_filepath_setting_raw}'. "
+                  f"Initial Prediction: '{potential_final_path}'. "
+                  f"Please check Blender's console for the actual output filename if rendering completed. "
+                  f"Skipping Fast Start processing.")
+            return
     
     if os.path.isdir(original_rendered_file): 
         print(f"Fast Start (post_render) ERROR: Resolved path '{original_rendered_file}' is a directory. "
@@ -455,16 +556,15 @@ def register():
     
     package_name = __package__
     if not package_name:
-        package_name = "blender_faststart" 
-        print(f"Warning: __package__ is not set. Defaulting to '{package_name}'. Ensure FastStartAddonPreferences.bl_idname is correct.")
+        package_name = Path(__file__).stem 
+        print(f"Warning: __package__ is not set. Using filename stem '{package_name}' for bl_idname. This is okay for direct script testing but ensure it's correct for addon installation.")
+    
+    FastStartAddonPreferences.bl_idname = package_name
 
     print(f"Registering Fast Start extension ('{package_name}')...")
 
-    # Register classes
     for cls in classes_to_register:
         try:
-            if cls == FastStartAddonPreferences: # Set bl_idname for preferences class
-                cls.bl_idname = package_name
             bpy.utils.register_class(cls)
         except ValueError: 
             print(f"  Class {cls.__name__} already registered. Attempting to unregister and re-register.")
@@ -477,7 +577,6 @@ def register():
              print(f"  Error registering class {cls.__name__}: {e_reg}")
     print(f"  Registered classes.")
 
-    # Add PointerProperty to Scene for scene-specific settings
     try:
         bpy.types.Scene.fast_start_settings_prop = bpy.props.PointerProperty(type=FastStartSettingsGroup)
         print("  SUCCESS: PropertyGroup 'fast_start_settings_prop' added to Scene.")
@@ -489,7 +588,6 @@ def register():
             print("    PropertyGroup 'fast_start_settings_prop' issue is not a simple re-registration. Manual check might be needed.")
         pass 
     
-    # Append UI drawing function to the render encoding panel
     try:
         if hasattr(bpy.types, "RENDER_PT_encoding") and hasattr(bpy.types.RENDER_PT_encoding, "append"):
             try: 
@@ -504,7 +602,6 @@ def register():
     except Exception as e_ui_append: 
         print(f"  Error appending checkbox UI: {e_ui_append}")
 
-    # Register application handlers
     handler_definitions = [
         ("render_init", bpy.app.handlers.render_init, on_render_init_faststart),
         ("render_pre", bpy.app.handlers.render_pre, check_output_path_pre_render_faststart),
@@ -527,7 +624,7 @@ def register():
 def unregister():
     global _render_job_cancelled_by_addon, _active_handlers_info
     
-    package_name = __package__ or "blender_faststart"
+    package_name = __package__ or Path(__file__).stem 
     print(f"Unregistering Fast Start Extension ('{package_name}')...")
 
     for name, handler_list, func in reversed(_active_handlers_info): 
