@@ -3,7 +3,7 @@
 
 schema_version = "1.0.0"
 id = "blender_faststart" 
-version = "1.8.3" 
+version = "1.8.4" 
 name = "Fast Start (MP4/MOV)"
 author = "usrname0 (plus AI)"
 maintainer = "usrname0 (plus AI)"
