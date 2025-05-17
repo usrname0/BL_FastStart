@@ -2,14 +2,12 @@
 # Manifest file for the Blender Fast Start Extension
 
 schema_version = "1.0.0"
-# The 'id' MUST be a valid Python module name (letters, numbers, underscores).
-# It must also match the name of the directory containing this manifest and your extension's __init__.py.
 id = "blender_faststart" 
-version = "1.8.0" 
+version = "1.8.1" 
 name = "Fast Start (MP4/MOV)"
 author = "usrname0 (plus AI)"
 maintainer = "usrname0 (plus AI)"
-tagline = "Copy with moov atom at the front of MP4/MOV files (Fast Start)"
+tagline = "Makes a copy with moov atom at the front of the file (Fast Start)"
 type = "add-on"
 license = ["GPL-3.0-or-later"]
 description = """Inserts a checkbox to add a 'Fast Start' copy to MP4/MOV renders.

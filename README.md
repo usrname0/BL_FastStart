@@ -1,18 +1,16 @@
 # Blender Fast Start (MP4/MOV)
-I'm going to make this public but don't use it yet unless you're willing to play guinea pig. 
-
 This is an extension for Blender 4.4+. 
 
 YouTube recommends MP4 + "moov atom at the front of the file (Fast Start)" so here's an extension for it. 
 
-Blender Fast Start puts a checkbox on your output panel to add a 'Fast Start' copy of MP4 or MOV renders. It will create an extra MP4/MOV file with a custom suffix (default is '-faststart').  Your normal render is untouched (safety first).  
+Blender Fast Start puts a checkbox on your output panel to add a 'Fast Start' copy of MP4 or MOV renders. It will create an extra MP4/MOV file with a custom suffix (default is '-faststart').  Your normal render is untouched so you'll have two files.  
 
-Fast start will make your video load a fraction of a second faster which can actually be handy if you're trying to make a loop with audio or trying to min/max your YouTube video performance or whatnot.
+In general "fast start" makes your video load a fraction of a second faster which can be handy if you're trying to make a loop with audio or trying to min/max your YouTube video performance or whatnot.
 
-Credit to https://github.com/danielgtaylor/qtfaststart and https://github.com/FFmpeg/FFmpeg for the part of this extension that actually does all the work.
+Credit to https://github.com/danielgtaylor/qtfaststart for the part of this extension that actually does all the work.
 
  # Status
- This is currently working in Windows 11 and Linux Mint (Ubuntu Debian), it's all Python and should theoretically work everywhere but I can't test everything.  I will be cleaning some things up shortly.
+ This is currently working in Windows 11 and Linux Mint (Ubuntu Debian), it's all Python and should theoretically work wherever Blender works.
 
  # Demo
  The checkbox shows up when you choose MPEG-4 (MP4) or QuickTime (MOV) output:
