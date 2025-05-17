@@ -3,6 +3,7 @@
 
 # --- Blender File Naming Conventions (as of Blender 4.x) ---
 # This script attempts to replicate Blender's output file naming logic.
+# IF THERE'S SOME WAY TO JUST PULL THAT OUT OF PYTHON LET ME KNOW
 # Key behaviors observed and implemented:
 #
 # General Principle: If frame numbers are to be added, Blender typically processes

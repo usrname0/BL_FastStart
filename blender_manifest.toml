@@ -3,15 +3,19 @@
 
 schema_version = "1.0.0"
 id = "blender_faststart" 
-version = "1.8.4" 
+version = "1.8.4"
+
 name = "Fast Start (MP4/MOV)"
-author = "usrname0 (plus AI)"
-maintainer = "usrname0 (plus AI)"
-tagline = "Copy with moov atom at the front of the file (Fast Start)"
+author = "usrname0 (AI assisted)"
+maintainer = "usrname0 (AI assisted)"
+tagline = "A checkbox to add a 'Fast Start' copy of MP4/MOV renders"
 type = "add-on"
 license = ["GPL-3.0-or-later"]
-description = """Inserts a checkbox to add a 'Fast Start' copy to MP4/MOV renders.
-Creates an extra MP4/MOV file with a custom suffix (default '-faststart'). Your normal render is untouched."""
+
+description = """Youtube recommends MP4 + moov atom at the front of the file (Fast Start).
+This checkbox creates an extra MP4/MOV file with a custom suffix (default '-faststart'). 
+Your normal render is untouched."""
+
 website = "https://github.com/usrname0/blender_faststart"
 tags = ["Render", "User Interface"]
 blender_version_min = "4.4.0"
