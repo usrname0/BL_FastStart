@@ -100,24 +100,36 @@ def draw_faststart_checkbox_ui(self, context):
     # Check if the output format is FFMPEG and container is MP4 or QUICKTIME
     if scene.render.image_settings.file_format == 'FFMPEG' and \
        scene.render.ffmpeg.format in {'MPEG4', 'QUICKTIME'}:
-        
+
         layout = self.layout
-        
+
         # Determine if 'Autosplit Output' is enabled
         autosplit_enabled = False
         if hasattr(scene.render.ffmpeg, "use_autosplit"):
             autosplit_enabled = scene.render.ffmpeg.use_autosplit
 
+        # Determine if Stereoscopy/Multiview is enabled
+        multiview_enabled = scene.render.use_multiview
+
         # Draw the "Use Fast Start" checkbox
         if addon_settings: # Check if the property group itself exists
             row = layout.row(align=True)
             if hasattr(addon_settings, "use_faststart_prop"):
-                # Determine the text for the checkbox based on whether autosplit is enabled
                 checkbox_text = "Fast Start (moov atom to front)"
-                if autosplit_enabled:
-                    row.enabled = False 
+                can_enable_faststart = True # Assume enabled by default
+
+                # Prioritize disabling conditions:
+                # If either multiview or autosplit is enabled, faststart should be disabled.
+                # The message should reflect the most relevant or primary reason.
+
+                if multiview_enabled:
+                    can_enable_faststart = False
+                    checkbox_text = "Fast Start (disabled due to Stereoscopy/Multiview)"
+                elif autosplit_enabled: # Only check autosplit if multiview isn't already disabling it
+                    can_enable_faststart = False
                     checkbox_text = "Fast Start (disabled due to Autosplit)"
-                
+
+                row.enabled = can_enable_faststart
                 row.prop(addon_settings, "use_faststart_prop", text=checkbox_text)
             else:
                 row.label(text="Fast Start Prop Missing!", icon='ERROR')
@@ -143,9 +155,9 @@ def _construct_video_filename(base_name_part, suffix_after_frame_numbers, start_
     if frame_padding_digits > 0: # Only add frame numbers if padding is explicitly requested
         # Always use range format if padding is specified
         start_frame_str = f"{start_frame:0{frame_padding_digits}d}"
-        end_frame_str = f"{end_frame:0{frame_padding_digits}d}" 
+        end_frame_str = f"{end_frame:0{frame_padding_digits}d}"
         frame_str_component = f"{start_frame_str}-{end_frame_str}"
-    
+
     return f"{base_name_part}{frame_str_component}{suffix_after_frame_numbers}{output_extension_with_dot}"
 
 
@@ -176,7 +188,7 @@ def run_qtfaststart_processing(input_path_str, output_path_str):
     original_sys_path = list(sys.path) # Store original sys.path
     qt_processor_module = None
     # Define custom exception types (will be overwritten by actual exceptions from qtfaststart if available)
-    QtFastStartSetupError = Exception 
+    QtFastStartSetupError = Exception
     QtMalformedFileError = Exception
     QtUnsupportedFormatError = Exception
 
@@ -211,8 +223,8 @@ def run_qtfaststart_processing(input_path_str, output_path_str):
 
     success = False
     try:
-        if not qt_processor_module: 
-            return False 
+        if not qt_processor_module:
+            return False
         # Process the video file
         qt_processor_module.process(input_path_str, output_path_str)
         # Check if the output file was created and is not empty
@@ -252,6 +264,11 @@ def on_render_init_faststart(scene, depsgraph=None):
         print("Fast Start (render_init): Not FFMPEG MP4/MOV output. Skipping.")
         return
 
+    # Skip if Stereoscopy/Multiview is enabled
+    if scene.render.use_multiview:
+        print("Fast Start (render_init): Stereoscopy/Multiview is enabled. Fast Start processing will be skipped for this render.")
+        return
+
     # Skip if 'Autosplit Output' is enabled (as Fast Start is incompatible)
     if hasattr(scene.render.ffmpeg, "use_autosplit") and scene.render.ffmpeg.use_autosplit:
         print("Fast Start (render_init): 'Autosplit Output' is enabled. Fast Start processing will be skipped for this render.")
@@ -265,7 +282,7 @@ def on_render_init_faststart(scene, depsgraph=None):
                          "Render job cancelled. Please specify an output path in "
                          "Properties > Output Properties > Output.")
         print(f"ERROR - {error_message}")
-        raise RuntimeError(error_message) 
+        raise RuntimeError(error_message)
     print("Fast Start (render_init): Handler finished, checks passed.")
 
 
@@ -277,13 +294,19 @@ def check_output_path_pre_render_faststart(scene, depsgraph=None):
 @persistent
 def post_render_faststart_handler(scene, depsgraph=None):
     global _render_job_cancelled_by_addon
-    if _render_job_cancelled_by_addon: 
+    if _render_job_cancelled_by_addon:
         print("Fast Start (post_render): Skipping due to prior cancellation flag by add-on."); return
 
     scene_specific_settings = scene.fast_start_settings_prop
     if not scene_specific_settings or not scene_specific_settings.use_faststart_prop: return
     if not (scene.render.image_settings.file_format == 'FFMPEG' and \
             scene.render.ffmpeg.format in {'MPEG4', 'QUICKTIME'}): return
+
+    # Skip if Stereoscopy/Multiview is enabled
+    if scene.render.use_multiview:
+        print("Fast Start (post_render): Stereoscopy/Multiview is enabled. Skipping Fast Start processing.")
+        return
+
     if hasattr(scene.render.ffmpeg, "use_autosplit") and scene.render.ffmpeg.use_autosplit:
         print("Fast Start (post_render): 'Autosplit Output' is enabled. Skipping Fast Start processing."); return
 
@@ -292,16 +315,16 @@ def post_render_faststart_handler(scene, depsgraph=None):
     addon_package_name = __package__ or "blender_faststart"
     addon_prefs = None
     try:
-        if FastStartAddonPreferences.bl_idname: 
+        if FastStartAddonPreferences.bl_idname:
             addon_prefs = bpy.context.preferences.addons[FastStartAddonPreferences.bl_idname].preferences
-        else: 
+        else:
             print(f"Fast Start (post_render) WARNING: FastStartAddonPreferences.bl_idname is not set. Attempting fallback with '{addon_package_name}'.")
             addon_prefs = bpy.context.preferences.addons[addon_package_name].preferences
     except KeyError:
         print(f"Fast Start (post_render) ERROR: Could not retrieve add-on preferences using '{FastStartAddonPreferences.bl_idname or addon_package_name}'. Check registration and bl_idname.")
 
     default_suffix_value = "-faststart"
-    custom_suffix = default_suffix_value 
+    custom_suffix = default_suffix_value
     if addon_prefs and hasattr(addon_prefs, 'faststart_suffix_prop'):
         user_suffix_from_prefs = addon_prefs.faststart_suffix_prop
         user_suffix_stripped = user_suffix_from_prefs.strip() if user_suffix_from_prefs is not None else ""
@@ -310,29 +333,29 @@ def post_render_faststart_handler(scene, depsgraph=None):
     else: print(f"Fast Start (post_render): Suffix property or addon_prefs missing. Using default suffix: '{default_suffix_value}'")
 
     suffix_before_final_sanitize = custom_suffix
-    custom_suffix = custom_suffix.replace("..", "") 
+    custom_suffix = custom_suffix.replace("..", "")
     custom_suffix = re.sub(r'[<>:"/\\|?*]', '_', custom_suffix)
-    custom_suffix = re.sub(r'[\x00-\x1F]', '', custom_suffix) 
-    if not custom_suffix.strip(): 
+    custom_suffix = re.sub(r'[\x00-\x1F]', '', custom_suffix)
+    if not custom_suffix.strip():
         if suffix_before_final_sanitize and suffix_before_final_sanitize.strip() and suffix_before_final_sanitize != default_suffix_value:
             print(f"Fast Start (post_render): Suffix '{suffix_before_final_sanitize}' became blank after sanitization. Reverting to default: '{default_suffix_value}'")
         custom_suffix = default_suffix_value
     elif custom_suffix != suffix_before_final_sanitize:
         print(f"Fast Start (post_render): Suffix sanitized from '{suffix_before_final_sanitize}' to '{custom_suffix}'")
 
-    original_filepath_setting_raw = scene.render.filepath 
-    abs_filepath_setting = bpy.path.abspath(original_filepath_setting_raw) 
-    container_type = scene.render.ffmpeg.format 
+    original_filepath_setting_raw = scene.render.filepath
+    abs_filepath_setting = bpy.path.abspath(original_filepath_setting_raw)
+    container_type = scene.render.ffmpeg.format
     start_frame = scene.frame_start
     end_frame = scene.frame_end
 
     blender_output_dir = ""
-    user_setting_basename = "" 
-    if os.path.isdir(abs_filepath_setting): 
+    user_setting_basename = ""
+    if os.path.isdir(abs_filepath_setting):
         blender_output_dir = abs_filepath_setting
-        if bpy.data.is_saved and bpy.data.filepath: user_setting_basename = Path(bpy.data.filepath).stem 
-        else: user_setting_basename = "" 
-    else: 
+        if bpy.data.is_saved and bpy.data.filepath: user_setting_basename = Path(bpy.data.filepath).stem
+        else: user_setting_basename = ""
+    else:
         blender_output_dir = os.path.dirname(abs_filepath_setting)
         user_setting_basename = os.path.basename(abs_filepath_setting)
 
@@ -354,7 +377,7 @@ def post_render_faststart_handler(scene, depsgraph=None):
     last_hash_match_in_full_basename = None
     for match in re.finditer(r'(#+)', user_setting_basename):
         last_hash_match_in_full_basename = match
-    
+
     if last_hash_match_in_full_basename:
         text_before_rightmost_hashes = user_setting_basename[:last_hash_match_in_full_basename.start()]
         padding_from_rightmost_hashes = len(last_hash_match_in_full_basename.group(1))
@@ -378,8 +401,8 @@ def post_render_faststart_handler(scene, depsgraph=None):
             print("Applying Rule 2b (NAME###.CORRECT_EXT -> NAME###.correct_ext)")
             base_for_construction = user_input_name_part # e.g., NAME###
             frame_padding_final = 0 # No frame processing by helper
-            suffix_for_constructor = "" 
-        
+            suffix_for_constructor = ""
+
         # Rule 2a: "NAME.CORRECT_EXT" -> "NAME.correct_ext" (no hashes in name, correct user ext)
         elif user_input_ext_part.lower() == actual_correct_ext_lower and \
              not re.search(r'#+', user_input_name_part): # Ensure name part has no hashes
@@ -387,21 +410,21 @@ def post_render_faststart_handler(scene, depsgraph=None):
             base_for_construction = user_input_name_part # e.g., NAME
             frame_padding_final = 0 # No frame processing by helper
             suffix_for_constructor = ""
-        
+
         # Rule 3: Hashes are present somewhere in user_setting_basename (and not covered by Rule 2b)
         elif padding_from_rightmost_hashes > 0:
             print("Applying Rule 3 (use_ext=True, rightmost hashes in full string processed)")
             base_for_construction = text_before_rightmost_hashes
             frame_padding_final = padding_from_rightmost_hashes
             suffix_for_constructor = text_after_rightmost_hashes # This is part between frames and final .mp4/.mov
-        
+
         # Rule 4: No hashes anywhere in user_setting_basename, and extension was incorrect or missing
         # (This also covers cases where user_input_ext_part.lower() != actual_correct_ext_lower)
-        else: 
+        else:
             print("Applying Rule 4 (use_ext=True, no hashes, incorrect/no user ext OR no specific rule matched -> default frame append)")
             base_for_construction = user_setting_basename # Full user input becomes base before frames
             frame_padding_final = 4
-            suffix_for_constructor = "" 
+            suffix_for_constructor = ""
 
     else: # "File Extension" UNCHECKED
         if padding_from_rightmost_hashes > 0: # Hashes found in full string, use them
@@ -409,8 +432,8 @@ def post_render_faststart_handler(scene, depsgraph=None):
             base_for_construction = text_before_rightmost_hashes
             frame_padding_final = padding_from_rightmost_hashes
             # text_after_rightmost_hashes becomes the literal extension (or empty if hashes were at the very end)
-            suffix_for_constructor = "" 
-            final_extension_for_constructor = text_after_rightmost_hashes 
+            suffix_for_constructor = ""
+            final_extension_for_constructor = text_after_rightmost_hashes
         else: # No hashes anywhere in full string
             print("No hashes in full string, literal output (use_ext=False)")
             # Output is user_setting_basename as is. Split it for constructor.
@@ -418,10 +441,10 @@ def post_render_faststart_handler(scene, depsgraph=None):
             # Handle case like "test" where splitext gives ext="" but user_setting_basename is "test"
             if not user_setting_basename.endswith(final_extension_for_constructor) and final_extension_for_constructor == "":
                  base_for_construction = user_setting_basename
-            
+
             frame_padding_final = 0
             suffix_for_constructor = ""
-            
+
     print(f"Fast Start (post_render): Final construction params: Base='{base_for_construction}', SuffixAfterFrames='{suffix_for_constructor}', Padding={frame_padding_final}, FinalExt='{final_extension_for_constructor}'")
 
     predicted_blender_filename = _construct_video_filename(
@@ -433,7 +456,7 @@ def post_render_faststart_handler(scene, depsgraph=None):
         final_extension_for_constructor
     )
     # --- End of Revised Naming Logic ---
-    
+
     potential_final_path = os.path.join(blender_output_dir, predicted_blender_filename)
     print(f"Fast Start (post_render): Predicted Blender output file: '{potential_final_path}'")
 
@@ -445,12 +468,12 @@ def post_render_faststart_handler(scene, depsgraph=None):
         print(f"Fast Start (post_render) WARNING: Primary prediction for rendered file failed. Path: '{potential_final_path}' did not exist or was a directory.")
 
     if not original_rendered_file:
-        if os.path.isdir(abs_filepath_setting): 
+        if os.path.isdir(abs_filepath_setting):
             if use_blender_file_extensions_setting:
                 blend_name_base = ""
                 if bpy.data.is_saved and bpy.data.filepath: blend_name_base = Path(bpy.data.filepath).stem
                 if blend_name_base:
-                    alt_filename_blend = _construct_video_filename(blend_name_base, "", start_frame, end_frame, 4, final_extension_for_constructor if use_blender_file_extensions_setting else "") 
+                    alt_filename_blend = _construct_video_filename(blend_name_base, "", start_frame, end_frame, 4, final_extension_for_constructor if use_blender_file_extensions_setting else "")
                     alt_path_blend = os.path.join(blender_output_dir, alt_filename_blend)
                     if os.path.exists(alt_path_blend) and not os.path.isdir(alt_path_blend):
                         original_rendered_file = alt_path_blend
@@ -461,23 +484,23 @@ def post_render_faststart_handler(scene, depsgraph=None):
                     if os.path.exists(alt_path_frames) and not os.path.isdir(alt_path_frames):
                         original_rendered_file = alt_path_frames
                         print(f"Fast Start (post_render): Found with fallback (frames in dir): {original_rendered_file}")
-        
+
         if not original_rendered_file:
             print(f"Fast Start (post_render) ERROR: Could not find the actual rendered file after fallbacks. "
                   f"Blender output setting: '{original_filepath_setting_raw}'. "
                   f"Initial Prediction: '{potential_final_path}'. "
                   f"Skipping Fast Start processing.")
             return
-    
-    if os.path.isdir(original_rendered_file): 
+
+    if os.path.isdir(original_rendered_file):
         print(f"Fast Start (post_render) ERROR: Resolved path '{original_rendered_file}' is a directory. Skipping."); return
 
     print(f"Fast Start (post_render): Original rendered file identified as: {original_rendered_file}")
     try:
         source_dir, source_basename_full = os.path.split(original_rendered_file)
-        source_name_part, source_ext_part = os.path.splitext(source_basename_full) 
+        source_name_part, source_ext_part = os.path.splitext(source_basename_full)
         fast_start_name_part = f"{source_name_part}{custom_suffix}"
-        fast_start_output_path = os.path.join(source_dir, fast_start_name_part + source_ext_part) 
+        fast_start_output_path = os.path.join(source_dir, fast_start_name_part + source_ext_part)
         print(f"Fast Start (post_render): Processing '{original_rendered_file}' to new file '{fast_start_output_path}' (Suffix: '{custom_suffix}')")
         success = run_qtfaststart_processing(original_rendered_file, fast_start_output_path)
         if success:
@@ -499,12 +522,12 @@ classes_to_register = (
 
 def register():
     global _active_handlers_info; _active_handlers_info.clear()
-    package_name = __package__ or Path(__file__).stem 
+    package_name = __package__ or Path(__file__).stem
     FastStartAddonPreferences.bl_idname = package_name
     print(f"Registering Fast Start extension ('{package_name}')...")
     for cls in classes_to_register:
         try: bpy.utils.register_class(cls)
-        except ValueError: 
+        except ValueError:
             print(f"  Class {cls.__name__} already registered. Attempting re-register.")
             try: bpy.utils.unregister_class(cls); bpy.utils.register_class(cls)
             except Exception as e_rereg: print(f"    Could not re-register {cls.__name__}: {e_rereg}")
@@ -517,7 +540,7 @@ def register():
     try:
         if hasattr(bpy.types, "RENDER_PT_encoding") and hasattr(bpy.types.RENDER_PT_encoding, "append"):
             try: bpy.types.RENDER_PT_encoding.remove(draw_faststart_checkbox_ui)
-            except: pass 
+            except: pass
             bpy.types.RENDER_PT_encoding.append(draw_faststart_checkbox_ui)
             print(f"  Appended checkbox UI to RENDER_PT_encoding panel.")
         else: print("  WARNING: Could not append checkbox UI.")
@@ -532,14 +555,14 @@ def register():
             try: handler_list.append(func); print(f"  Appended handler: {func.__name__} to {name}.")
             except Exception as e_h_append: print(f"  ERROR appending handler {func.__name__}: {e_h_append}")
         else: print(f"  Handler {func.__name__} already in {name}.")
-        _active_handlers_info.append((name, handler_list, func)) 
+        _active_handlers_info.append((name, handler_list, func))
     print(f"Fast Start Extension ('{package_name}') Registration COMPLETE.")
 
 def unregister():
     global _render_job_cancelled_by_addon, _active_handlers_info
-    package_name = __package__ or Path(__file__).stem 
+    package_name = __package__ or Path(__file__).stem
     print(f"Unregistering Fast Start Extension ('{package_name}')...")
-    for name, handler_list, func in reversed(_active_handlers_info): 
+    for name, handler_list, func in reversed(_active_handlers_info):
         if func in handler_list:
             try: handler_list.remove(func); print(f"  Removed handler: {func.__name__} from {name}.")
             except Exception as e_h_rem: print(f"  ERROR removing handler {func.__name__}: {e_h_rem}")
@@ -548,14 +571,13 @@ def unregister():
         if hasattr(bpy.types, "RENDER_PT_encoding") and hasattr(bpy.types.RENDER_PT_encoding, "remove"):
             bpy.types.RENDER_PT_encoding.remove(draw_faststart_checkbox_ui)
             print(f"  Checkbox UI removed.")
-    except: pass 
+    except: pass
     if hasattr(bpy.types.Scene, 'fast_start_settings_prop'):
         try: del bpy.types.Scene.fast_start_settings_prop; print("  PropertyGroup removed.")
         except Exception as e_pg_del: print(f"  Error deleting PropertyGroup: {e_pg_del}")
-    for cls in reversed(classes_to_register): 
+    for cls in reversed(classes_to_register):
         try: bpy.utils.unregister_class(cls)
-        except: pass 
+        except: pass
     print(f"  Unregistered classes.")
     _render_job_cancelled_by_addon = False
     print(f"Fast Start Extension ('{package_name}') Unregistration COMPLETE.")
-
