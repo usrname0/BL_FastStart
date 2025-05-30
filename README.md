@@ -27,7 +27,7 @@ Credit to https://github.com/danielgtaylor/qtfaststart for the part of this exte
 
  # Manual Installation
  
- Download the [zip](https://github.com/usrname0/blender_faststart/blob/899cb2fcdf7861bbf184ef4d036ed3992ee84380/builds/blender_faststart-1.8.5.zip). Install it as a zip file like this:
+ Download the [zip](https://github.com/usrname0/fast_start/releases/tag/v1.8.6). Install it as a zip file like this:
  
  ![Manual Install 1](./examples/faststart_install1.png)
  
