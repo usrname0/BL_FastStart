@@ -1,9 +1,10 @@
 # filename: extension_logic.py
 # Main logic for the Fast Start Blender Extension, using bundled qtfaststart.
 
+# This is a lot of comments but I'm leaving it as a favor to future revisits
 # --- Blender File Naming Conventions (as of Blender 4.x) ---
 # This script attempts to replicate Blender's output file naming logic.
-# IF THERE'S SOME WAY TO JUST PULL THAT OUT OF PYTHON LET ME KNOW
+# 
 # Key behaviors observed and implemented:
 #
 # General Principle: If frame numbers are to be added, Blender typically processes
@@ -61,9 +62,10 @@ from bpy.props import BoolProperty, StringProperty
 from bpy.types import PropertyGroup, AddonPreferences
 from bpy.app.handlers import persistent
 
-# Imports for bundled qtfaststart
-import sys
-from pathlib import Path
+# Imports for bundled qtfaststart using relative import
+from pathlib import Path # Path is still used elsewhere in the script
+from .qtfaststart_lib import process as qtfaststart_process
+from .qtfaststart_lib import FastStartSetupError, MalformedFileError, UnsupportedFormatError, FastStartException
 
 # --- Module-level globals ---
 _render_job_cancelled_by_addon = False
@@ -181,67 +183,25 @@ def run_qtfaststart_processing(input_path_str, output_path_str):
         except Exception as e_dir:
             print(f"QTFASTSTART ERROR: Could not create output directory '{output_dir}': {e_dir}"); return False
 
-    # Locates the bundled qtfaststart library
-    addon_root_dir = Path(__file__).parent.resolve()
-    libs_dir = addon_root_dir / "libs"
-
-    original_sys_path = list(sys.path) # Store original sys.path
-    qt_processor_module = None
-    # Define custom exception types (will be overwritten by actual exceptions from qtfaststart if available)
-    QtFastStartSetupError = Exception
-    QtMalformedFileError = Exception
-    QtUnsupportedFormatError = Exception
-
-    # Temporarily add libs_dir to sys.path to allow importing qtfaststart
-    if str(libs_dir) not in sys.path:
-        sys.path.insert(0, str(libs_dir))
-
-    try:
-        import qtfaststart # Attempt to import the library
-
-        # Check if the processor submodule exists
-        if hasattr(qtfaststart, 'processor'):
-            qt_processor_module = qtfaststart.processor
-        else:
-            print(f"QTFASTSTART ERROR: 'qtfaststart' package does not have a 'processor' attribute/submodule.")
-            if str(libs_dir) in sys.path: sys.path = original_sys_path # Restore sys.path
-            return False
-
-        # Try to get specific exception types from the library for better error handling
-        if hasattr(qtfaststart, 'exceptions'):
-            if hasattr(qtfaststart.exceptions, 'FastStartSetupError'): QtFastStartSetupError = qtfaststart.exceptions.FastStartSetupError
-            if hasattr(qtfaststart.exceptions, 'MalformedFileError'): QtMalformedFileError = qtfaststart.exceptions.MalformedFileError
-            if hasattr(qtfaststart.exceptions, 'UnsupportedFormatError'): QtUnsupportedFormatError = qtfaststart.exceptions.UnsupportedFormatError
-    except ImportError as e_import:
-        print(f"QTFASTSTART ERROR: Import failed for 'qtfaststart' from '{libs_dir}': {e_import}")
-        if str(libs_dir) in sys.path: sys.path = original_sys_path # Restore sys.path
-        return False
-    except Exception as e_generic_import:
-        print(f"QTFASTSTART ERROR: A generic error occurred during the import phase of qtfaststart: {e_generic_import}")
-        if str(libs_dir) in sys.path: sys.path = original_sys_path # Restore sys.path
-        return False
-
     success = False
     try:
-        if not qt_processor_module:
-            return False
-        # Process the video file
-        qt_processor_module.process(input_path_str, output_path_str)
+        # Process the video file using the directly imported function and exceptions
+        qtfaststart_process(input_path_str, output_path_str)
         # Check if the output file was created and is not empty
         if os.path.exists(output_path_str) and os.path.getsize(output_path_str) > 0:
             success = True
         else:
             print(f"QTFASTSTART ERROR: Output file '{output_path_str}' not found or is empty after process seemed to complete.")
-    # Handle specific qtfaststart errors
-    except QtFastStartSetupError as e_setup: print(f"QTFASTSTART ERROR (Setup): {e_setup}")
-    except QtMalformedFileError as e_malformed: print(f"QTFASTSTART ERROR (Malformed File): {e_malformed}")
-    except QtUnsupportedFormatError as e_unsupported: print(f"QTFASTSTART ERROR (Unsupported Format): {e_unsupported}")
+    # Handle specific qtfaststart errors (now directly available from import)
+    except FastStartSetupError as e_setup: print(f"QTFASTSTART ERROR (Setup): {e_setup}")
+    except MalformedFileError as e_malformed: print(f"QTFASTSTART ERROR (Malformed File): {e_malformed}")
+    except UnsupportedFormatError as e_unsupported: print(f"QTFASTSTART ERROR (Unsupported Format): {e_unsupported}")
     except FileNotFoundError as e_fnf: print(f"QTFASTSTART ERROR (File Not Found during process): {e_fnf}")
-    except Exception as e_runtime: print(f"QTFASTSTART ERROR: An unexpected error occurred during qtfaststart.process execution: {e_runtime}")
-    finally:
-        # Restore the original sys.path
-        if str(libs_dir) in sys.path:
-             sys.path = original_sys_path
+    except FastStartException as e_general_fs: # Catching the base qtfaststart exception
+        print(f"QTFASTSTART ERROR (General qtfaststart lib): {e_general_fs}")
+    except Exception as e_runtime: # Catch any other unexpected errors
+        print(f"QTFASTSTART ERROR: An unexpected error occurred during qtfaststart_process execution: {e_runtime}")
+
     return success
 
 # --- Application Handlers ---

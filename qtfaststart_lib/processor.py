@@ -11,13 +11,10 @@ import collections
 
 import io
 
-from qtfaststart.exceptions import FastStartSetupError
-from qtfaststart.exceptions import MalformedFileError
-from qtfaststart.exceptions import UnsupportedFormatError
-
-# This exception isn't directly used, included it for backward compatability
-# in the event someone had used it from our namespace previously
-from qtfaststart.exceptions import FastStartException
+from .exceptions import FastStartSetupError
+from .exceptions import MalformedFileError
+from .exceptions import UnsupportedFormatError
+from .exceptions import FastStartException
 
 CHUNK_SIZE = 8192
 
