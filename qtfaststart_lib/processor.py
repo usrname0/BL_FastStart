@@ -110,15 +110,6 @@ def _ensure_valid_index(index):
             raise MalformedFileError(msg)
 
 
-def find_atoms(size, datastream):
-    """
-    Compatibilty interface for _find_atoms_ex
-    """
-    fake_parent = Atom('fake', datastream.tell()-8, size+8)
-    for atom in _find_atoms_ex(fake_parent, datastream):
-        yield atom.name
-
-
 def _find_atoms_ex(parent_atom, datastream):
     """
         Yield either "stco" or "co64" Atoms from datastream.

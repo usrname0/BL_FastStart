@@ -313,8 +313,7 @@ def post_render_faststart_handler(scene, depsgraph=None):
     user_setting_basename = ""
     if os.path.isdir(abs_filepath_setting):
         blender_output_dir = abs_filepath_setting
-        if bpy.data.is_saved and bpy.data.filepath: user_setting_basename = Path(bpy.data.filepath).stem
-        else: user_setting_basename = ""
+        user_setting_basename = "" 
     else:
         blender_output_dir = os.path.dirname(abs_filepath_setting)
         user_setting_basename = os.path.basename(abs_filepath_setting)
@@ -323,7 +322,6 @@ def post_render_faststart_handler(scene, depsgraph=None):
     print(f"Fast Start (post_render): Blender output directory: '{blender_output_dir}'")
     print(f"Fast Start (post_render): Effective user setting basename: '{user_setting_basename}'")
 
-    # --- Start of Revised Naming Logic ---
     base_for_construction = ""
     frame_padding_final = 0
     suffix_for_constructor = "" # Text between frame numbers and the very final extension
@@ -415,7 +413,6 @@ def post_render_faststart_handler(scene, depsgraph=None):
         frame_padding_final,
         final_extension_for_constructor
     )
-    # --- End of Revised Naming Logic ---
 
     potential_final_path = os.path.join(blender_output_dir, predicted_blender_filename)
     print(f"Fast Start (post_render): Predicted Blender output file: '{potential_final_path}'")
@@ -429,21 +426,12 @@ def post_render_faststart_handler(scene, depsgraph=None):
 
     if not original_rendered_file:
         if os.path.isdir(abs_filepath_setting):
-            if use_blender_file_extensions_setting:
-                blend_name_base = ""
-                if bpy.data.is_saved and bpy.data.filepath: blend_name_base = Path(bpy.data.filepath).stem
-                if blend_name_base:
-                    alt_filename_blend = _construct_video_filename(blend_name_base, "", start_frame, end_frame, 4, final_extension_for_constructor if use_blender_file_extensions_setting else "")
-                    alt_path_blend = os.path.join(blender_output_dir, alt_filename_blend)
-                    if os.path.exists(alt_path_blend) and not os.path.isdir(alt_path_blend):
-                        original_rendered_file = alt_path_blend
-                        print(f"Fast Start (post_render): Found with fallback (blend name in dir): {original_rendered_file}")
-                if not original_rendered_file:
-                    alt_filename_frames = _construct_video_filename("", "", start_frame, end_frame, 4, final_extension_for_constructor if use_blender_file_extensions_setting else "")
-                    alt_path_frames = os.path.join(blender_output_dir, alt_filename_frames)
-                    if os.path.exists(alt_path_frames) and not os.path.isdir(alt_path_frames):
-                        original_rendered_file = alt_path_frames
-                        print(f"Fast Start (post_render): Found with fallback (frames in dir): {original_rendered_file}")
+            # Based on observation, Blender uses an empty base name (just frames) when outputting to a directory.
+            alt_filename_frames = _construct_video_filename("", "", start_frame, end_frame, 4, final_extension_for_constructor)
+            alt_path_frames = os.path.join(blender_output_dir, alt_filename_frames)
+            if os.path.exists(alt_path_frames) and not os.path.isdir(alt_path_frames):
+                original_rendered_file = alt_path_frames
+                print(f"Fast Start (post_render): Found with fallback (frames in dir): {original_rendered_file}")
 
         if not original_rendered_file:
             print(f"Fast Start (post_render) ERROR: Could not find the actual rendered file after fallbacks. "

@@ -3,7 +3,7 @@
 
 schema_version = "1.0.0"
 id = "BL_FastStart" 
-version = "1.9.0"
+version = "1.9.1"
 
 name = "BL Fast Start (MP4/MOV)"
 author = "usrname0 (AI assisted)"
@@ -26,3 +26,13 @@ This checkbox creates an extra MP4/MOV file with a custom suffix (default '-fast
 Your normal render is untouched."""
 
 tags = ["Render", "User Interface"]
+
+[build]
+paths_exclude_pattern = [
+    "__pycache__/",
+    "/.git/",
+    "/.gitignore",
+    "/README.md",
+    "/*.zip",
+    "examples/",
+]
