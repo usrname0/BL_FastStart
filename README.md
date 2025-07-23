@@ -9,9 +9,6 @@ In general "fast start" makes your video load a fraction of a second faster whic
 
 Credit to https://github.com/danielgtaylor/qtfaststart for the part of this extension that actually does all the work.
 
- # Status
- This is currently working in Windows 11 and Linux Mint (Ubuntu Debian), it's all Python and should theoretically work wherever Blender works.  The first thing to check if there's any problem: make sure you're on Blender 4.4+.  
-
  # Demo
  The checkbox shows up when you choose MPEG-4 (MP4) or QuickTime (MOV) output:
  
