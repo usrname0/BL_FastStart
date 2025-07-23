@@ -27,7 +27,7 @@ Credit to https://github.com/danielgtaylor/qtfaststart for the part of this exte
 
  # Manual Installation
  
- Download the [zip](https://github.com/usrname0/BL_FastStart/releases/tag/v1.8.6). Install it as a zip file like this:
+ Download the latest [zip](https://github.com/usrname0/BL_FastStart/releases). Install it as a zip file like this:
  
  ![Manual Install 1](./examples/faststart_install1.png)
  
