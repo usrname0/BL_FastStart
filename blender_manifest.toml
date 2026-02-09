@@ -37,4 +37,5 @@ paths_exclude_pattern = [
     "/README.md",
     "/*.zip",
     "examples/",
+	"tests/",
 ]

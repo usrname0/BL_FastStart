@@ -78,21 +78,6 @@ def draw_faststart_checkbox_ui(self, context):
             else:
                 row.label(text="Fast Start Prop Missing!", icon='ERROR')
 
-# --- Helper Function for Filename Construction ---
-def _construct_video_filename(base_name_part, suffix_after_frame_numbers, start_frame, end_frame, frame_padding_digits, output_extension_with_dot):
-    """
-    Constructs a filename string based on Blender's naming patterns.
-    If frame_padding_digits > 0, always uses start-end frame format (e.g., 0001-0001 for single frame).
-    """
-    frame_str_component = ""
-
-    if frame_padding_digits > 0:
-        start_frame_str = f"{start_frame:0{frame_padding_digits}d}"
-        end_frame_str = f"{end_frame:0{frame_padding_digits}d}"
-        frame_str_component = f"{start_frame_str}-{end_frame_str}"
-
-    return f"{base_name_part}{frame_str_component}{suffix_after_frame_numbers}{output_extension_with_dot}"
-
 # --- QTFASTSTART Processing Logic ---
 def run_qtfaststart_processing(input_path_str, output_path_str):
     """Process video file with qtfaststart, creating fast-start version."""
@@ -216,56 +201,21 @@ def post_render_faststart_handler(scene, depsgraph=None):
     elif custom_suffix != suffix_before_sanitize:
         print(f"Fast Start: Suffix sanitized from '{suffix_before_sanitize}' to '{custom_suffix}'")
 
-    # Parse file paths and settings
-    original_filepath_setting_raw = scene.render.filepath
-    abs_filepath_setting = bpy.path.abspath(original_filepath_setting_raw)
-    container_type = scene.render.ffmpeg.format
-    start_frame = scene.frame_start
-    end_frame = scene.frame_end
-
-    # Determine output directory and user basename
-    if os.path.isdir(abs_filepath_setting):
-        blender_output_dir = abs_filepath_setting
-        user_setting_basename = ""
-    else:
-        blender_output_dir = os.path.dirname(abs_filepath_setting)
-        user_setting_basename = os.path.basename(abs_filepath_setting)
-
-    # Parse filename construction parameters based on Blender's complex naming logic
-    base_for_construction, frame_padding_final, suffix_for_constructor, final_extension_for_constructor = \
-        _parse_blender_filename_logic(user_setting_basename, container_type, scene.render.use_file_extension)
-
-    # Predict rendered filename
-    predicted_blender_filename = _construct_video_filename(
-        base_for_construction,
-        suffix_for_constructor,
-        start_frame,
-        end_frame,
-        frame_padding_final,
-        final_extension_for_constructor
-    )
-
-    potential_final_path = os.path.join(blender_output_dir, predicted_blender_filename)
-
-    # Find the actual rendered file
-    original_rendered_file = None
-    if os.path.exists(potential_final_path) and not os.path.isdir(potential_final_path):
-        original_rendered_file = potential_final_path
-    else:
-        # Fallback for directory output
-        if os.path.isdir(abs_filepath_setting):
-            alt_filename = _construct_video_filename("", "", start_frame, end_frame, 4, final_extension_for_constructor)
-            alt_path = os.path.join(blender_output_dir, alt_filename)
-            if os.path.exists(alt_path) and not os.path.isdir(alt_path):
-                original_rendered_file = alt_path
-
-    if not original_rendered_file:
-        print(f"Fast Start ERROR: Could not find rendered file. Expected: {potential_final_path}")
+    # Get the rendered file path using Blender's own API
+    try:
+        rendered_filepath = bpy.path.abspath(
+            scene.render.frame_path(frame=scene.frame_start)
+        )
+    except Exception as e:
+        print(f"Fast Start ERROR: Could not resolve output path: {e}")
         return
 
-    if os.path.isdir(original_rendered_file):
-        print(f"Fast Start ERROR: Resolved path is a directory: {original_rendered_file}")
+    # Verify the rendered file exists
+    if not os.path.isfile(rendered_filepath):
+        print(f"Fast Start ERROR: Could not find rendered file: {rendered_filepath}")
         return
+
+    original_rendered_file = rendered_filepath
 
     # Create fast-start version
     try:
@@ -284,56 +234,6 @@ def post_render_faststart_handler(scene, depsgraph=None):
                 
     except Exception as e:
         print(f"Fast Start ERROR: {e}")
-
-def _parse_blender_filename_logic(user_setting_basename, container_type, use_file_extension):
-    """
-    Parse Blender's complex filename logic to determine construction parameters.
-    Returns: (base_for_construction, frame_padding_final, suffix_for_constructor, final_extension_for_constructor)
-    """
-    # Find rightmost hash sequence in full basename
-    text_before_rightmost_hashes = user_setting_basename
-    padding_from_rightmost_hashes = 0
-    text_after_rightmost_hashes = ""
-
-    last_hash_match = None
-    for match in re.finditer(r'(#+)', user_setting_basename):
-        last_hash_match = match
-
-    if last_hash_match:
-        text_before_rightmost_hashes = user_setting_basename[:last_hash_match.start()]
-        padding_from_rightmost_hashes = len(last_hash_match.group(1))
-        text_after_rightmost_hashes = user_setting_basename[last_hash_match.end():]
-
-    if use_file_extension:  # "File Extension" CHECKED
-        actual_correct_ext_lower = (".mp4" if container_type == 'MPEG4' else ".mov")
-        final_extension_for_constructor = actual_correct_ext_lower
-
-        user_input_name_part, user_input_ext_part = os.path.splitext(user_setting_basename)
-
-        # Rule 2b: "NAME###.CORRECT_EXT" -> "NAME###.correct_ext"
-        if user_input_ext_part.lower() == actual_correct_ext_lower and re.search(r'#+', user_input_name_part):
-            return user_input_name_part, 0, "", final_extension_for_constructor
-
-        # Rule 2a: "NAME.CORRECT_EXT" -> "NAME.correct_ext"
-        elif user_input_ext_part.lower() == actual_correct_ext_lower and not re.search(r'#+', user_input_name_part):
-            return user_input_name_part, 0, "", final_extension_for_constructor
-
-        # Rule 3: Hashes present
-        elif padding_from_rightmost_hashes > 0:
-            return text_before_rightmost_hashes, padding_from_rightmost_hashes, text_after_rightmost_hashes, final_extension_for_constructor
-
-        # Rule 4: Default frame append
-        else:
-            return user_setting_basename, 4, "", final_extension_for_constructor
-
-    else:  # "File Extension" UNCHECKED
-        if padding_from_rightmost_hashes > 0:
-            return text_before_rightmost_hashes, padding_from_rightmost_hashes, "", text_after_rightmost_hashes
-        else:
-            base_for_construction, final_extension_for_constructor = os.path.splitext(user_setting_basename)
-            if not user_setting_basename.endswith(final_extension_for_constructor) and final_extension_for_constructor == "":
-                base_for_construction = user_setting_basename
-            return base_for_construction, 0, "", final_extension_for_constructor
 
 # --- Registration ---
 classes_to_register = (
