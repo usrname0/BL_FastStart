@@ -11,11 +11,38 @@ from bpy.app.handlers import persistent
 # Imports for bundled qtfaststart using relative import
 from pathlib import Path
 from .qtfaststart_lib import process as qtfaststart_process
-from .qtfaststart_lib import FastStartSetupError, MalformedFileError, UnsupportedFormatError, FastStartException
+from .qtfaststart_lib import FastStartSetupError, MalformedFileError, UnsupportedFormatError
 
 # --- Module-level globals ---
 _render_job_cancelled_by_addon = False
 _active_handlers_info = []
+
+_DEFAULT_SUFFIX = "-faststart"
+
+# --- Helpers ---
+def _is_faststart_format(scene):
+    """Check if scene output is set to FFMPEG with MP4 or QuickTime container."""
+    return (scene.render.image_settings.file_format == 'FFMPEG'
+            and scene.render.ffmpeg.format in {'MPEG4', 'QUICKTIME'})
+
+def _has_incompatible_features(scene):
+    """Check if multiview or autosplit is enabled (incompatible with fast start)."""
+    if scene.render.use_multiview:
+        return True
+    if hasattr(scene.render.ffmpeg, "use_autosplit") and scene.render.ffmpeg.use_autosplit:
+        return True
+    return False
+
+def _sanitize_suffix(raw_suffix):
+    """Sanitize a user-provided suffix, returning _DEFAULT_SUFFIX if result is empty."""
+    sanitized = raw_suffix.replace("..", "")
+    sanitized = re.sub(r'[<>:"/\\|?*]', '_', sanitized)
+    sanitized = re.sub(r'[\x00-\x1F]', '', sanitized)
+    if not sanitized.strip():
+        sanitized = _DEFAULT_SUFFIX
+    elif sanitized != raw_suffix:
+        print(f"Fast Start: Suffix sanitized from '{raw_suffix}' to '{sanitized}'")
+    return sanitized
 
 # --- Add-on Preferences ---
 class FastStartAddonPreferences(AddonPreferences):
@@ -45,38 +72,28 @@ def draw_faststart_checkbox_ui(self, context):
     scene = context.scene
     addon_settings = scene.fast_start_settings_prop
 
-    # Check if the output format is FFMPEG and container is MP4 or QUICKTIME
-    if scene.render.image_settings.file_format == 'FFMPEG' and \
-       scene.render.ffmpeg.format in {'MPEG4', 'QUICKTIME'}:
+    if not _is_faststart_format(scene):
+        return
 
-        layout = self.layout
+    layout = self.layout
 
-        # Determine if 'Autosplit Output' is enabled
-        autosplit_enabled = False
-        if hasattr(scene.render.ffmpeg, "use_autosplit"):
-            autosplit_enabled = scene.render.ffmpeg.use_autosplit
+    if not addon_settings or not hasattr(addon_settings, "use_faststart_prop"):
+        layout.row(align=True).label(text="Fast Start Prop Missing!", icon='ERROR')
+        return
 
-        # Determine if Stereoscopy/Multiview is enabled
-        multiview_enabled = scene.render.use_multiview
+    row = layout.row(align=True)
+    checkbox_text = "Fast Start (moov atom to front)"
+    can_enable = True
 
-        # Draw the "Use Fast Start" checkbox
-        if addon_settings:
-            row = layout.row(align=True)
-            if hasattr(addon_settings, "use_faststart_prop"):
-                checkbox_text = "Fast Start (moov atom to front)"
-                can_enable_faststart = True
+    if scene.render.use_multiview:
+        can_enable = False
+        checkbox_text = "Fast Start (disabled due to Stereoscopy/Multiview)"
+    elif hasattr(scene.render.ffmpeg, "use_autosplit") and scene.render.ffmpeg.use_autosplit:
+        can_enable = False
+        checkbox_text = "Fast Start (disabled due to Autosplit)"
 
-                if multiview_enabled:
-                    can_enable_faststart = False
-                    checkbox_text = "Fast Start (disabled due to Stereoscopy/Multiview)"
-                elif autosplit_enabled:
-                    can_enable_faststart = False
-                    checkbox_text = "Fast Start (disabled due to Autosplit)"
-
-                row.enabled = can_enable_faststart
-                row.prop(addon_settings, "use_faststart_prop", text=checkbox_text)
-            else:
-                row.label(text="Fast Start Prop Missing!", icon='ERROR')
+    row.enabled = can_enable
+    row.prop(addon_settings, "use_faststart_prop", text=checkbox_text)
 
 # --- QTFASTSTART Processing Logic ---
 def run_qtfaststart_processing(input_path_str, output_path_str):
@@ -129,14 +146,7 @@ def on_render_init_faststart(scene, depsgraph=None):
     if not addon_settings or not addon_settings.use_faststart_prop:
         return
 
-    # Skip if not FFMPEG MP4/MOV
-    if not (scene.render.image_settings.file_format == 'FFMPEG' and \
-            scene.render.ffmpeg.format in {'MPEG4', 'QUICKTIME'}):
-        return
-
-    # Skip if incompatible features enabled
-    if scene.render.use_multiview or \
-       (hasattr(scene.render.ffmpeg, "use_autosplit") and scene.render.ffmpeg.use_autosplit):
+    if not _is_faststart_format(scene) or _has_incompatible_features(scene):
         return
 
     # Validate output path
@@ -162,44 +172,26 @@ def post_render_faststart_handler(scene, depsgraph=None):
         return
 
     # Check if Fast Start is enabled and applicable
-    scene_specific_settings = scene.fast_start_settings_prop
-    if not scene_specific_settings or not scene_specific_settings.use_faststart_prop:
-        return
-        
-    if not (scene.render.image_settings.file_format == 'FFMPEG' and \
-            scene.render.ffmpeg.format in {'MPEG4', 'QUICKTIME'}):
+    addon_settings = scene.fast_start_settings_prop
+    if not addon_settings or not addon_settings.use_faststart_prop:
         return
 
-    # Skip if incompatible features enabled
-    if scene.render.use_multiview or \
-       (hasattr(scene.render.ffmpeg, "use_autosplit") and scene.render.ffmpeg.use_autosplit):
+    if not _is_faststart_format(scene) or _has_incompatible_features(scene):
         return
 
-    # Get and validate suffix
+    # Get suffix from preferences
     addon_package_name = __package__ or "blender_faststart"
-    addon_prefs = None
     try:
         addon_prefs = bpy.context.preferences.addons[addon_package_name].preferences
     except KeyError:
+        addon_prefs = None
         print(f"Fast Start WARNING: Could not retrieve add-on preferences")
 
-    default_suffix_value = "-faststart"
-    custom_suffix = default_suffix_value
+    custom_suffix = _DEFAULT_SUFFIX
     if addon_prefs and hasattr(addon_prefs, 'faststart_suffix_prop'):
-        user_suffix = addon_prefs.faststart_suffix_prop.strip() if addon_prefs.faststart_suffix_prop else ""
+        user_suffix = (addon_prefs.faststart_suffix_prop or "").strip()
         if user_suffix:
-            custom_suffix = user_suffix
-
-    # Sanitize suffix
-    suffix_before_sanitize = custom_suffix
-    custom_suffix = custom_suffix.replace("..", "")
-    custom_suffix = re.sub(r'[<>:"/\\|?*]', '_', custom_suffix)
-    custom_suffix = re.sub(r'[\x00-\x1F]', '', custom_suffix)
-    
-    if not custom_suffix.strip():
-        custom_suffix = default_suffix_value
-    elif custom_suffix != suffix_before_sanitize:
-        print(f"Fast Start: Suffix sanitized from '{suffix_before_sanitize}' to '{custom_suffix}'")
+            custom_suffix = _sanitize_suffix(user_suffix)
 
     # Get the rendered file path using Blender's own API
     try:
@@ -215,21 +207,18 @@ def post_render_faststart_handler(scene, depsgraph=None):
         print(f"Fast Start ERROR: Could not find rendered file: {rendered_filepath}")
         return
 
-    original_rendered_file = rendered_filepath
-
     # Create fast-start version
     try:
-        source_dir, source_basename = os.path.split(original_rendered_file)
+        source_dir, source_basename = os.path.split(rendered_filepath)
         source_name, source_ext = os.path.splitext(source_basename)
-        fast_start_name = f"{source_name}{custom_suffix}"
-        fast_start_output_path = os.path.join(source_dir, fast_start_name + source_ext)
-        
-        success = run_qtfaststart_processing(original_rendered_file, fast_start_output_path)
+        fast_start_output_path = os.path.join(source_dir, f"{source_name}{custom_suffix}{source_ext}")
+
+        success = run_qtfaststart_processing(rendered_filepath, fast_start_output_path)
         
         if not success and os.path.exists(fast_start_output_path) and os.path.getsize(fast_start_output_path) == 0:
             try:
                 os.remove(fast_start_output_path)
-            except:
+            except OSError:
                 pass
                 
     except Exception as e:
@@ -298,9 +287,7 @@ def register():
 def unregister():
     """Unregister the addon classes and handlers."""
     global _render_job_cancelled_by_addon, _active_handlers_info
-    
-    package_name = __package__ or Path(__file__).stem
-    
+
     # Remove handlers
     for name, handler_list, func in reversed(_active_handlers_info):
         if func in handler_list:

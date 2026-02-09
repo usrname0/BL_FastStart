@@ -9,7 +9,7 @@ In general "fast start" makes your video load a fraction of a second faster whic
 
 Credit to https://github.com/danielgtaylor/qtfaststart for the part of this extension that actually does all the work.
 
- # Demo
+# Demo
  The checkbox shows up when you choose MPEG-4 (MP4) or QuickTime (MOV) output:
  
  ![Find it](./examples/faststart_findit.png)

@@ -16,12 +16,11 @@ whatever Blender actually produced — no hardcoded expected filenames.
 
 import bpy
 import os
-import re
 
 # ──────────────────────────────────────────────────────────
 # Configuration
 # ──────────────────────────────────────────────────────────
-OUTPUT_DIR = r"C:\Users\retcon\Desktop\faststart_test"
+OUTPUT_DIR = os.path.join(os.environ.get("TEMP", os.environ.get("TMP", "/tmp")), "faststart_test")
 SUFFIX = "-faststart"  # must match the addon preference
 
 # (output_path_tail, use_file_extension)
