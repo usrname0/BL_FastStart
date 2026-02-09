@@ -63,10 +63,10 @@ def run_stress_test():
     scene.frame_end = 11
 
     # Ensure Fast Start is enabled (scene-level toggle)
-    if hasattr(scene, "faststart_settings"):
-        scene.faststart_settings.use_faststart_prop = True
+    if hasattr(scene, "fast_start_settings_prop"):
+        scene.fast_start_settings_prop.use_faststart_prop = True
     else:
-        print("WARNING: faststart_settings not found on scene — "
+        print("WARNING: fast_start_settings_prop not found on scene — "
               "is the extension installed and enabled?")
 
     # Create output directory
