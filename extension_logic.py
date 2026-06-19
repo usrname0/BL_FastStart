@@ -9,7 +9,6 @@ from bpy.types import PropertyGroup, AddonPreferences
 from bpy.app.handlers import persistent
 
 # Imports for bundled qtfaststart using relative import
-from pathlib import Path
 from .qtfaststart_lib import process as qtfaststart_process
 from .qtfaststart_lib import FastStartSetupError, MalformedFileError, UnsupportedFormatError
 
@@ -18,6 +17,7 @@ _render_job_cancelled_by_addon = False
 _active_handlers_info = []
 
 _DEFAULT_SUFFIX = "-faststart"
+_FALLBACK_PACKAGE_NAME = "BL_FastStart"  # matches manifest id; only used if __package__ is unset
 
 # --- Helpers ---
 def _is_faststart_format(scene):
@@ -46,7 +46,7 @@ def _sanitize_suffix(raw_suffix):
 
 # --- Add-on Preferences ---
 class FastStartAddonPreferences(AddonPreferences):
-    bl_idname = __package__
+    bl_idname = __package__  # reassigned in register() to the resolved package name
 
     faststart_suffix_prop: StringProperty(
         name="Fast Start Suffix",
@@ -180,7 +180,7 @@ def post_render_faststart_handler(scene, depsgraph=None):
         return
 
     # Get suffix from preferences
-    addon_package_name = __package__ or "blender_faststart"
+    addon_package_name = __package__ or _FALLBACK_PACKAGE_NAME
     try:
         addon_prefs = bpy.context.preferences.addons[addon_package_name].preferences
     except KeyError:
@@ -235,7 +235,7 @@ def register():
     global _active_handlers_info
     _active_handlers_info.clear()
     
-    package_name = __package__ or Path(__file__).stem
+    package_name = __package__ or _FALLBACK_PACKAGE_NAME
     FastStartAddonPreferences.bl_idname = package_name
     
     # Register classes
@@ -263,7 +263,7 @@ def register():
         if hasattr(bpy.types, "RENDER_PT_encoding"):
             try:
                 bpy.types.RENDER_PT_encoding.remove(draw_faststart_checkbox_ui)
-            except:
+            except Exception:
                 pass
             bpy.types.RENDER_PT_encoding.append(draw_faststart_checkbox_ui)
     except Exception as e:
@@ -301,7 +301,7 @@ def unregister():
     try:
         if hasattr(bpy.types, "RENDER_PT_encoding"):
             bpy.types.RENDER_PT_encoding.remove(draw_faststart_checkbox_ui)
-    except:
+    except Exception:
         pass
 
     # Remove property group
@@ -315,7 +315,7 @@ def unregister():
     for cls in reversed(classes_to_register):
         try:
             bpy.utils.unregister_class(cls)
-        except:
+        except Exception:
             pass
 
     _render_job_cancelled_by_addon = False
