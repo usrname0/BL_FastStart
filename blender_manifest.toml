@@ -3,7 +3,7 @@
 
 schema_version = "1.0.0"
 id = "BL_FastStart" 
-version = "1.9.4"
+version = "1.9.5"
 
 name = "BL Fast Start (MP4/MOV)"
 tagline = "A checkbox to add a 'Fast Start' copy of MP4/MOV renders"
@@ -32,12 +32,15 @@ copyright = [
 [build]
 paths_exclude_pattern = [
     "__pycache__/",
+    "*.pyc",
+    ".*",
     "/.git/",
     "/.gitignore",
     "/.vscode/",
     "/.claude/",
-    "/README.md",
+    "/*.md",
     "/*.zip",
+    "/zips/",
     "examples/",
     "tests/",
 ]

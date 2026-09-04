@@ -1,5 +1,9 @@
-# filename: extension_logic.py
-# Main logic for the Fast Start Blender Extension, using bundled qtfaststart.
+"""Fast Start: write a second copy of an MP4/MOV render with the moov atom first.
+
+A checkbox on the output panel plus three render handlers. The original render
+is never modified; the copy is written beside it with a suffix. The atom
+rearranging itself is the bundled qtfaststart library.
+"""
 
 import bpy
 import os
@@ -8,16 +12,20 @@ from bpy.props import BoolProperty, StringProperty
 from bpy.types import PropertyGroup, AddonPreferences
 from bpy.app.handlers import persistent
 
-# Imports for bundled qtfaststart using relative import
 from .qtfaststart_lib import process as qtfaststart_process
 from .qtfaststart_lib import FastStartSetupError, MalformedFileError, UnsupportedFormatError
 
-# --- Module-level globals ---
+# Set by the render_init handler and read by the two that follow it, because a
+# handler cannot return a value to the ones after it.
 _render_job_cancelled_by_addon = False
+
+# The (name, handler_list, func) triples register() appended, so unregister()
+# takes off exactly what was put on.
 _active_handlers_info = []
 
+# Appended to the render's filename to make the copy's. Never empty, which is
+# what keeps the copy's path from colliding with the render's.
 _DEFAULT_SUFFIX = "-faststart"
-_FALLBACK_PACKAGE_NAME = "BL_FastStart"  # matches manifest id; only used if __package__ is unset
 
 # --- Helpers ---
 def _is_faststart_format(scene):
@@ -29,7 +37,7 @@ def _has_incompatible_features(scene):
     """Check if multiview or autosplit is enabled (incompatible with fast start)."""
     if scene.render.use_multiview:
         return True
-    if hasattr(scene.render.ffmpeg, "use_autosplit") and scene.render.ffmpeg.use_autosplit:
+    if scene.render.ffmpeg.use_autosplit:
         return True
     return False
 
@@ -46,7 +54,9 @@ def _sanitize_suffix(raw_suffix):
 
 # --- Add-on Preferences ---
 class FastStartAddonPreferences(AddonPreferences):
-    bl_idname = __package__  # reassigned in register() to the resolved package name
+    # Must match the key this addon has in preferences.addons, which is the
+    # package name Blender imported it under.
+    bl_idname = __package__
 
     faststart_suffix_prop: StringProperty(
         name="Fast Start Suffix",
@@ -59,7 +69,7 @@ class FastStartAddonPreferences(AddonPreferences):
         layout = self.layout
         layout.prop(self, "faststart_suffix_prop")
 
-# --- Define a Property Group (Scene-specific settings) ---
+# --- Scene settings ---
 class FastStartSettingsGroup(PropertyGroup):
     use_faststart_prop: BoolProperty(
         name="Use Fast Start",
@@ -70,16 +80,12 @@ class FastStartSettingsGroup(PropertyGroup):
 # --- UI Panel Drawing Function ---
 def draw_faststart_checkbox_ui(self, context):
     scene = context.scene
-    addon_settings = scene.fast_start_settings_prop
 
     if not _is_faststart_format(scene):
         return
 
+    addon_settings = scene.fast_start_settings_prop
     layout = self.layout
-
-    if not addon_settings or not hasattr(addon_settings, "use_faststart_prop"):
-        layout.row(align=True).label(text="Fast Start Prop Missing!", icon='ERROR')
-        return
 
     row = layout.row(align=True)
     checkbox_text = "Fast Start (moov atom to front)"
@@ -88,7 +94,7 @@ def draw_faststart_checkbox_ui(self, context):
     if scene.render.use_multiview:
         can_enable = False
         checkbox_text = "Fast Start (disabled due to Stereoscopy/Multiview)"
-    elif hasattr(scene.render.ffmpeg, "use_autosplit") and scene.render.ffmpeg.use_autosplit:
+    elif scene.render.ffmpeg.use_autosplit:
         can_enable = False
         checkbox_text = "Fast Start (disabled due to Autosplit)"
 
@@ -106,7 +112,6 @@ def run_qtfaststart_processing(input_path_str, output_path_str):
         print(f"Fast Start ERROR: Input path is a directory: {input_path_str}")
         return False
 
-    # Create output directory if needed
     output_dir = os.path.dirname(output_path_str)
     if output_dir and not os.path.exists(output_dir):
         try:
@@ -122,7 +127,7 @@ def run_qtfaststart_processing(input_path_str, output_path_str):
             print(f"Fast Start: Created optimized file: {os.path.basename(output_path_str)}")
             return True
         else:
-            print(f"Fast Start ERROR: Output file not created or empty")
+            print("Fast Start ERROR: Output file not created or empty")
             return False
             
     except FastStartSetupError:
@@ -138,18 +143,16 @@ def run_qtfaststart_processing(input_path_str, output_path_str):
 # --- Application Handlers ---
 @persistent
 def on_render_init_faststart(scene, depsgraph=None):
-    """Called when render job is initialized - validate settings."""
+    """Refuse the render if Fast Start is on and there is nowhere to write."""
     global _render_job_cancelled_by_addon
     _render_job_cancelled_by_addon = False
 
-    addon_settings = scene.fast_start_settings_prop
-    if not addon_settings or not addon_settings.use_faststart_prop:
+    if not scene.fast_start_settings_prop.use_faststart_prop:
         return
 
     if not _is_faststart_format(scene) or _has_incompatible_features(scene):
         return
 
-    # Validate output path
     if not scene.render.filepath.strip():
         _render_job_cancelled_by_addon = True
         error_message = ("Fast Start: Output path is empty. Please specify an output path in "
@@ -171,21 +174,19 @@ def post_render_faststart_handler(scene, depsgraph=None):
     if _render_job_cancelled_by_addon:
         return
 
-    # Check if Fast Start is enabled and applicable
-    addon_settings = scene.fast_start_settings_prop
-    if not addon_settings or not addon_settings.use_faststart_prop:
+    if not scene.fast_start_settings_prop.use_faststart_prop:
         return
 
     if not _is_faststart_format(scene) or _has_incompatible_features(scene):
         return
 
-    # Get suffix from preferences
-    addon_package_name = __package__ or _FALLBACK_PACKAGE_NAME
     try:
-        addon_prefs = bpy.context.preferences.addons[addon_package_name].preferences
+        addon_prefs = bpy.context.preferences.addons[__package__].preferences
     except KeyError:
+        # Falls back to _DEFAULT_SUFFIX below; the wrong name is visible to the
+        # user, the file contents are unaffected.
         addon_prefs = None
-        print(f"Fast Start WARNING: Could not retrieve add-on preferences")
+        print("Fast Start WARNING: Could not retrieve add-on preferences")
 
     custom_suffix = _DEFAULT_SUFFIX
     if addon_prefs and hasattr(addon_prefs, 'faststart_suffix_prop'):
@@ -193,7 +194,8 @@ def post_render_faststart_handler(scene, depsgraph=None):
         if user_suffix:
             custom_suffix = _sanitize_suffix(user_suffix)
 
-    # Get the rendered file path using Blender's own API
+    # Ask Blender where it wrote the file rather than rebuilding the path from
+    # filepath: autonaming, the frame range and relative paths all feed into it.
     try:
         rendered_filepath = bpy.path.abspath(
             scene.render.frame_path(frame=scene.frame_start)
@@ -202,25 +204,30 @@ def post_render_faststart_handler(scene, depsgraph=None):
         print(f"Fast Start ERROR: Could not resolve output path: {e}")
         return
 
-    # Verify the rendered file exists
     if not os.path.isfile(rendered_filepath):
         print(f"Fast Start ERROR: Could not find rendered file: {rendered_filepath}")
         return
 
-    # Create fast-start version
     try:
         source_dir, source_basename = os.path.split(rendered_filepath)
         source_name, source_ext = os.path.splitext(source_basename)
         fast_start_output_path = os.path.join(source_dir, f"{source_name}{custom_suffix}{source_ext}")
 
         success = run_qtfaststart_processing(rendered_filepath, fast_start_output_path)
-        
-        if not success and os.path.exists(fast_start_output_path) and os.path.getsize(fast_start_output_path) == 0:
+
+        # Remove whatever is at the output path on any failure, not only a
+        # zero-byte file. A write that fails partway leaves a truncated video
+        # that plays for part of its length, and a file left from an earlier
+        # render is a copy of different content under the current render's
+        # name. Nothing in this addon can tell the user either way.
+        # _sanitize_suffix guarantees a non-empty suffix, so this path is
+        # never the render itself.
+        if not success and os.path.exists(fast_start_output_path):
             try:
                 os.remove(fast_start_output_path)
-            except OSError:
-                pass
-                
+            except OSError as e:
+                print(f"Fast Start ERROR: Could not remove failed output: {e}")
+
     except Exception as e:
         print(f"Fast Start ERROR: {e}")
 
@@ -234,61 +241,42 @@ def register():
     """Register the addon classes and handlers."""
     global _active_handlers_info
     _active_handlers_info.clear()
-    
-    package_name = __package__ or _FALLBACK_PACKAGE_NAME
-    FastStartAddonPreferences.bl_idname = package_name
-    
-    # Register classes
+
+    # Nothing here is guarded. A registration failure must reach Blender, which
+    # refuses to enable the addon and shows the traceback; swallowing it leaves
+    # the addon enabled and half-installed, which presents only as the checkbox
+    # being absent or doing nothing.
     for cls in classes_to_register:
         try:
             bpy.utils.register_class(cls)
         except ValueError:
-            # Already registered, try to re-register
-            try:
-                bpy.utils.unregister_class(cls)
-                bpy.utils.register_class(cls)
-            except Exception as e:
-                print(f"Fast Start: Could not re-register {cls.__name__}: {e}")
-        except Exception as e:
-            print(f"Fast Start: Error registering {cls.__name__}: {e}")
+            # A stale class from an interrupted reload is still registered.
+            bpy.utils.unregister_class(cls)
+            bpy.utils.register_class(cls)
 
-    # Add property group to Scene
-    try:
-        bpy.types.Scene.fast_start_settings_prop = bpy.props.PointerProperty(type=FastStartSettingsGroup)
-    except Exception as e:
-        print(f"Fast Start: Error adding PropertyGroup: {e}")
+    bpy.types.Scene.fast_start_settings_prop = bpy.props.PointerProperty(type=FastStartSettingsGroup)
 
-    # Add UI to render panel
-    try:
-        if hasattr(bpy.types, "RENDER_PT_encoding"):
-            try:
-                bpy.types.RENDER_PT_encoding.remove(draw_faststart_checkbox_ui)
-            except Exception:
-                pass
-            bpy.types.RENDER_PT_encoding.append(draw_faststart_checkbox_ui)
-    except Exception as e:
-        print(f"Fast Start: Error adding UI: {e}")
+    # remove() before append(): append does not deduplicate, so a reload would
+    # otherwise draw the checkbox once per load. Removing a function that was
+    # never appended is not an error.
+    bpy.types.RENDER_PT_encoding.remove(draw_faststart_checkbox_ui)
+    bpy.types.RENDER_PT_encoding.append(draw_faststart_checkbox_ui)
 
-    # Register handlers
     handler_definitions = [
         ("render_init", bpy.app.handlers.render_init, on_render_init_faststart),
         ("render_pre", bpy.app.handlers.render_pre, check_output_path_pre_render_faststart),
         ("render_complete", bpy.app.handlers.render_complete, post_render_faststart_handler)
     ]
-    
+
     for name, handler_list, func in handler_definitions:
         if func not in handler_list:
-            try:
-                handler_list.append(func)
-            except Exception as e:
-                print(f"Fast Start: Error adding handler {func.__name__}: {e}")
+            handler_list.append(func)
         _active_handlers_info.append((name, handler_list, func))
 
 def unregister():
     """Unregister the addon classes and handlers."""
     global _render_job_cancelled_by_addon, _active_handlers_info
 
-    # Remove handlers
     for name, handler_list, func in reversed(_active_handlers_info):
         if func in handler_list:
             try:
@@ -297,21 +285,14 @@ def unregister():
                 print(f"Fast Start: Error removing handler {func.__name__}: {e}")
     _active_handlers_info.clear()
 
-    # Remove UI
-    try:
-        if hasattr(bpy.types, "RENDER_PT_encoding"):
-            bpy.types.RENDER_PT_encoding.remove(draw_faststart_checkbox_ui)
-    except Exception:
-        pass
+    bpy.types.RENDER_PT_encoding.remove(draw_faststart_checkbox_ui)
 
-    # Remove property group
     if hasattr(bpy.types.Scene, 'fast_start_settings_prop'):
         try:
             del bpy.types.Scene.fast_start_settings_prop
         except Exception as e:
             print(f"Fast Start: Error removing PropertyGroup: {e}")
 
-    # Unregister classes
     for cls in reversed(classes_to_register):
         try:
             bpy.utils.unregister_class(cls)
