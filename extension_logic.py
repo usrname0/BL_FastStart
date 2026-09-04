@@ -27,6 +27,14 @@ _active_handlers_info = []
 # what keeps the copy's path from colliding with the render's.
 _DEFAULT_SUFFIX = "-faststart"
 
+# The name Blender imported this addon under, and its key in
+# preferences.addons. Only a top-level script leaves __package__ unset, which
+# this never is; raise rather than substitute a fallback, since a fallback name
+# misses preferences.addons and the addon runs on with a silently wrong suffix.
+if __package__ is None:
+    raise RuntimeError("Fast Start: __package__ is unset; not imported as a package")
+_PACKAGE = __package__
+
 # --- Helpers ---
 def _is_faststart_format(scene):
     """Check if scene output is set to FFMPEG with MP4 or QuickTime container."""
@@ -56,7 +64,7 @@ def _sanitize_suffix(raw_suffix):
 class FastStartAddonPreferences(AddonPreferences):
     # Must match the key this addon has in preferences.addons, which is the
     # package name Blender imported it under.
-    bl_idname = __package__
+    bl_idname = _PACKAGE
 
     faststart_suffix_prop: StringProperty(
         name="Fast Start Suffix",
@@ -181,7 +189,7 @@ def post_render_faststart_handler(scene, depsgraph=None):
         return
 
     try:
-        addon_prefs = bpy.context.preferences.addons[__package__].preferences
+        addon_prefs = bpy.context.preferences.addons[_PACKAGE].preferences
     except KeyError:
         # Falls back to _DEFAULT_SUFFIX below; the wrong name is visible to the
         # user, the file contents are unaffected.
@@ -216,12 +224,10 @@ def post_render_faststart_handler(scene, depsgraph=None):
         success = run_qtfaststart_processing(rendered_filepath, fast_start_output_path)
 
         # Remove whatever is at the output path on any failure, not only a
-        # zero-byte file. A write that fails partway leaves a truncated video
-        # that plays for part of its length, and a file left from an earlier
-        # render is a copy of different content under the current render's
-        # name. Nothing in this addon can tell the user either way.
-        # _sanitize_suffix guarantees a non-empty suffix, so this path is
-        # never the render itself.
+        # zero-byte file: a partial write leaves a truncated video that still
+        # plays, and a leftover from an earlier render is different content
+        # under this render's name. _sanitize_suffix keeps the suffix
+        # non-empty, so this path is never the render itself.
         if not success and os.path.exists(fast_start_output_path):
             try:
                 os.remove(fast_start_output_path)
@@ -242,10 +248,9 @@ def register():
     global _active_handlers_info
     _active_handlers_info.clear()
 
-    # Nothing here is guarded. A registration failure must reach Blender, which
-    # refuses to enable the addon and shows the traceback; swallowing it leaves
-    # the addon enabled and half-installed, which presents only as the checkbox
-    # being absent or doing nothing.
+    # Unguarded on purpose: a registration failure must reach Blender, which
+    # then refuses to enable the addon and shows the traceback. Swallowing it
+    # leaves the addon enabled and half-installed.
     for cls in classes_to_register:
         try:
             bpy.utils.register_class(cls)
