@@ -28,18 +28,12 @@ If you want to customize your suffix you can do so in preferences/addons.  Be su
  
  ![Custom Suffix](./examples/faststart_preferences.png)
 
- # Automatic Installation
+# Installation
 
- ![Automatic Install 1](./examples/faststart_install1.png)
+**From Blender.** Edit > Preferences > Get Extensions, search for "BL Fast Start",
+and press Install.
 
- ![Automatic Install 2](./examples/faststart_install2_auto.png)
- 
- # Manual Installation
- 
- Download the latest [zip](https://github.com/usrname0/BL_FastStart/releases). Install it as a zip file like this:
- 
- ![Manual Install 1](./examples/faststart_install1.png)
- 
- ![Manual Install 2](./examples/faststart_install2.png)
- 
- ![Manual Install 3](./examples/faststart_install3.png)
+**From a zip.** Download the latest
+[zip](https://github.com/usrname0/BL_FastStart/releases) and install it as an
+extension: Edit > Preferences > Add-ons, then the drop-down arrow at the top
+right > Install from Disk, and pick the zip.
