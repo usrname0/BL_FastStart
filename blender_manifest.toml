@@ -3,7 +3,7 @@
 
 schema_version = "1.0.0"
 id = "BL_FastStart" 
-version = "1.9.5"
+version = "1.9.6"
 
 name = "BL Fast Start (MP4/MOV)"
 tagline = "A checkbox to add a 'Fast Start' copy of MP4/MOV renders"

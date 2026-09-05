@@ -176,16 +176,22 @@ def process(infilename, outfilename, limit=float('inf'), to_end=False,
         # Get the top level atom index
         index = get_index(datastream)
 
+        # The atoms are guaranteed to exist from get_index above, which raises
+        # MalformedFileError unless both moov and mdat are top-level. Taken out
+        # of the loop below so that guarantee is stated where it is relied on:
+        # bound inside the loop, every read of it afterwards is a possibly
+        # unbound local, and an upstream change to get_index would surface as
+        # UnboundLocalError rather than as the MalformedFileError it raises now.
+        # The last moov wins, as it did when this was a loop.
+        moov_atom = [atom for atom in index if atom.name == "moov"][-1]
+        moov_pos = moov_atom.position
+
         mdat_pos = 999999
         free_size = 0
 
         # Make sure moov occurs AFTER mdat, otherwise no need to run!
         for atom in index:
-            # The atoms are guaranteed to exist from get_index above!
-            if atom.name == "moov":
-                moov_atom = atom
-                moov_pos = atom.position
-            elif atom.name == "mdat":
+            if atom.name == "mdat":
                 mdat_pos = atom.position
             elif atom.name == "free" and atom.position < mdat_pos and cleanup:
                 # This free atom is before the mdat!

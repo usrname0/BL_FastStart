@@ -11,6 +11,10 @@ through the helpers it calls:
   * a conversion that fails partway must not leave a truncated file on disk
   * autosplit and multiview must keep the addon from running at all
 
+and one guarantee inside the vendored library, which is asserted here because
+the library itself is kept verbatim: a file with no moov atom is refused before
+anything reads the moov.
+
 Run against one Blender:
 
     "/c/Program Files/Blender Foundation/Blender 5.2/blender.exe" -b \
@@ -40,6 +44,11 @@ FRAME_START = 1
 FRAME_END = 5
 RENDER_NAME = "myrender0001-0005.mp4"
 FAST_NAME = "myrender0001-0005-faststart.mp4"
+
+
+def atom(name, payload=b""):
+    """One length-prefixed MP4 box, for building a deliberately broken file."""
+    return struct.pack(">L4s", 8 + len(payload), name.encode("ascii")) + payload
 
 
 def top_level_atoms(path, limit=8):
@@ -91,7 +100,9 @@ def main():
     version = bpy.app.version_string
     failures = []
 
-    def check(label, got, want=True):
+    # want is annotated because it defaults to True and would otherwise infer
+    # as bool, which reports against every count and filename asserted below.
+    def check(label: str, got: object, want: object = True):
         if got != want:
             failures.append(f"{label}: expected {want}, got {got}")
 
@@ -126,6 +137,17 @@ def main():
             check(f"original still has moov last ({original})",
                   original.index("moov") > original.index("mdat"))
 
+            # The other side of the moov/mdat comparison: a file that is
+            # already optimized is refused rather than rewritten.
+            try:
+                logic.qtfaststart_process(os.path.join(out_dir, FAST_NAME),
+                                          os.path.join(out_dir, "again.mp4"))
+                raised = "nothing"
+            except Exception as exc:
+                raised = type(exc).__name__
+            check("an already-optimized file is refused", raised,
+                  "FastStartSetupError")
+
         # A conversion that fails partway leaves a truncated file behind. Only
         # the handler cleans it up, so drive the handler rather than the helper.
         real_process = logic.qtfaststart_process
@@ -155,6 +177,23 @@ def main():
 
     check("suffix sanitized", logic._sanitize_suffix('a<b>c:d/e'), "a_b_c_d_e")
     check("blank suffix falls back", logic._sanitize_suffix("   "), "-faststart")
+
+    # qtfaststart binds moov_atom inside a loop over the index and reads it
+    # after the loop, which a type checker reports as possibly unbound five
+    # times. It cannot be: get_index() raises unless both moov and mdat are
+    # top-level atoms. The library is vendored verbatim, so the guarantee is
+    # pinned here rather than annotated there - an UnboundLocalError from a
+    # future upstream version would fail this check rather than reach a user.
+    with tempfile.TemporaryDirectory() as broken_dir:
+        no_moov = os.path.join(broken_dir, "no_moov.mp4")
+        with open(no_moov, "wb") as handle:
+            handle.write(atom("ftyp", b"isom") + atom("mdat", bytes(16)))
+        try:
+            logic.qtfaststart_process(no_moov, os.path.join(broken_dir, "out.mp4"))
+            raised = "nothing"
+        except Exception as exc:
+            raised = type(exc).__name__
+        check("a file with no moov atom is refused", raised, "MalformedFileError")
 
     addon.unregister()
 

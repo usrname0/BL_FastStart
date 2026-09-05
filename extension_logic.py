@@ -36,20 +36,23 @@ if __package__ is None:
 _PACKAGE = __package__
 
 # --- Helpers ---
-def _is_faststart_format(scene):
+def _is_faststart_format(scene: bpy.types.Scene):
     """Check if scene output is set to FFMPEG with MP4 or QuickTime container."""
+    # RNA does not flag render.ffmpeg never-null, so the stubs type it Optional.
+    # Measured non-None on 4.4.3 through 5.2.1: a guard here would be dead code
+    # in front of a crash that does not happen.
     return (scene.render.image_settings.file_format == 'FFMPEG'
-            and scene.render.ffmpeg.format in {'MPEG4', 'QUICKTIME'})
+            and scene.render.ffmpeg.format in {'MPEG4', 'QUICKTIME'})  # pyright: ignore[reportOptionalMemberAccess]
 
-def _has_incompatible_features(scene):
+def _has_incompatible_features(scene: bpy.types.Scene):
     """Check if multiview or autosplit is enabled (incompatible with fast start)."""
     if scene.render.use_multiview:
         return True
-    if scene.render.ffmpeg.use_autosplit:
+    if scene.render.ffmpeg.use_autosplit:  # pyright: ignore[reportOptionalMemberAccess]
         return True
     return False
 
-def _sanitize_suffix(raw_suffix):
+def _sanitize_suffix(raw_suffix: str):
     """Sanitize a user-provided suffix, returning _DEFAULT_SUFFIX if result is empty."""
     sanitized = raw_suffix.replace("..", "")
     sanitized = re.sub(r'[<>:"/\\|?*]', '_', sanitized)
@@ -73,7 +76,7 @@ class FastStartAddonPreferences(AddonPreferences):
         maxlen=128,
     )
 
-    def draw(self, context):
+    def draw(self, context: bpy.types.Context):
         layout = self.layout
         layout.prop(self, "faststart_suffix_prop")
 
@@ -86,7 +89,7 @@ class FastStartSettingsGroup(PropertyGroup):
     )
 
 # --- UI Panel Drawing Function ---
-def draw_faststart_checkbox_ui(self, context):
+def draw_faststart_checkbox_ui(self, context: bpy.types.Context):
     scene = context.scene
 
     if not _is_faststart_format(scene):
@@ -110,7 +113,7 @@ def draw_faststart_checkbox_ui(self, context):
     row.prop(addon_settings, "use_faststart_prop", text=checkbox_text)
 
 # --- QTFASTSTART Processing Logic ---
-def run_qtfaststart_processing(input_path_str, output_path_str):
+def run_qtfaststart_processing(input_path_str: str, output_path_str: str):
     """Process video file with qtfaststart, creating fast-start version."""
     if not os.path.exists(input_path_str):
         print(f"Fast Start ERROR: Input file not found: {input_path_str}")
@@ -150,12 +153,12 @@ def run_qtfaststart_processing(input_path_str, output_path_str):
 
 # --- Application Handlers ---
 @persistent
-def on_render_init_faststart(scene, depsgraph=None):
+def on_render_init_faststart(scene: bpy.types.Scene, depsgraph=None):
     """Refuse the render if Fast Start is on and there is nowhere to write."""
     global _render_job_cancelled_by_addon
     _render_job_cancelled_by_addon = False
 
-    if not scene.fast_start_settings_prop.use_faststart_prop:
+    if not scene.fast_start_settings_prop.use_faststart_prop:  # pyright: ignore[reportAttributeAccessIssue]
         return
 
     if not _is_faststart_format(scene) or _has_incompatible_features(scene):
@@ -169,20 +172,20 @@ def on_render_init_faststart(scene, depsgraph=None):
         raise RuntimeError(error_message)
 
 @persistent
-def check_output_path_pre_render_faststart(scene, depsgraph=None):
+def check_output_path_pre_render_faststart(scene: bpy.types.Scene, depsgraph=None):
     """Pre-render check for cancellation flag."""
     if _render_job_cancelled_by_addon:
         raise RuntimeError("Render job cancelled by Fast Start extension due to empty output path.")
 
 @persistent
-def post_render_faststart_handler(scene, depsgraph=None):
+def post_render_faststart_handler(scene: bpy.types.Scene, depsgraph=None):
     """Main post-render handler - creates fast-start version of rendered file."""
     global _render_job_cancelled_by_addon
     
     if _render_job_cancelled_by_addon:
         return
 
-    if not scene.fast_start_settings_prop.use_faststart_prop:
+    if not scene.fast_start_settings_prop.use_faststart_prop:  # pyright: ignore[reportAttributeAccessIssue]
         return
 
     if not _is_faststart_format(scene) or _has_incompatible_features(scene):
@@ -259,7 +262,10 @@ def register():
             bpy.utils.unregister_class(cls)
             bpy.utils.register_class(cls)
 
-    bpy.types.Scene.fast_start_settings_prop = bpy.props.PointerProperty(type=FastStartSettingsGroup)
+    # The addon's own property, hung off Blender's Scene class. No stub knows
+    # about it, so this line, the delete in unregister() and both reads in the
+    # handlers report an unknown attribute that is nonetheless real.
+    bpy.types.Scene.fast_start_settings_prop = bpy.props.PointerProperty(type=FastStartSettingsGroup)  # pyright: ignore[reportAttributeAccessIssue]
 
     # remove() before append(): append does not deduplicate, so a reload would
     # otherwise draw the checkbox once per load. Removing a function that was
@@ -294,7 +300,7 @@ def unregister():
 
     if hasattr(bpy.types.Scene, 'fast_start_settings_prop'):
         try:
-            del bpy.types.Scene.fast_start_settings_prop
+            del bpy.types.Scene.fast_start_settings_prop  # pyright: ignore[reportAttributeAccessIssue]
         except Exception as e:
             print(f"Fast Start: Error removing PropertyGroup: {e}")
 

@@ -43,8 +43,13 @@ def draw_func_count():
 
     WARNING: Panel.append() does not deduplicate. Counting rather than testing
     membership is what catches a reload leaving two checkboxes behind.
+
+    _dyn_ui_initialize() is Blender's own accessor for the list append() writes
+    to, defined on the _GenericUI mixin in _bpy_types. It is private and the
+    stubs do not carry it, so the checker cannot see it; there is no public way
+    to ask how many draw functions a panel holds.
     """
-    return bpy.types.RENDER_PT_encoding._dyn_ui_initialize().count(
+    return bpy.types.RENDER_PT_encoding._dyn_ui_initialize().count(  # pyright: ignore[reportAttributeAccessIssue]
         logic.draw_faststart_checkbox_ui)
 
 
@@ -56,14 +61,21 @@ def main():
     version = bpy.app.version_string
     failures = []
 
-    def check(label, got, want=True):
+    # want is annotated because it defaults to True and would otherwise infer
+    # as bool, which reports against every count and filename asserted below.
+    def check(label: str, got: object, want: object = True):
         if got != want:
             failures.append(f"{label}: expected {want}, got {got}")
 
     # Nothing should be registered yet; if these pass before register() the
     # assertions are not testing anything.
+    #
+    # is_registered reads as an unknown attribute at all three of these sites.
+    # It is real - a property on the _RNAMeta metaclass, measured present on
+    # 4.4.3 through 5.2.1 - but the stubs model no metaclass, so nothing
+    # declares it for the class object.
     for cls in logic.classes_to_register:
-        check(f"{cls.__name__} absent before register", cls.is_registered, False)
+        check(f"{cls.__name__} absent before register", cls.is_registered, False)  # pyright: ignore[reportAttributeAccessIssue]
     check("draw func absent before register", draw_func_count(), 0)
     check("Scene property absent before register",
           hasattr(bpy.types.Scene, "fast_start_settings_prop"), False)
@@ -71,7 +83,7 @@ def main():
     addon.register()
 
     for cls in logic.classes_to_register:
-        check(f"{cls.__name__} registered", cls.is_registered)
+        check(f"{cls.__name__} registered", cls.is_registered)  # pyright: ignore[reportAttributeAccessIssue]
     check("draw func appended once", draw_func_count(), 1)
     check("Scene property added",
           hasattr(bpy.types.Scene, "fast_start_settings_prop"))
@@ -92,7 +104,7 @@ def main():
     addon.unregister()
 
     for cls in logic.classes_to_register:
-        check(f"{cls.__name__} unregistered", cls.is_registered, False)
+        check(f"{cls.__name__} unregistered", cls.is_registered, False)  # pyright: ignore[reportAttributeAccessIssue]
     check("draw func removed", draw_func_count(), 0)
     check("Scene property removed",
           hasattr(bpy.types.Scene, "fast_start_settings_prop"), False)
